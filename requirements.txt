@@ -2,3 +2,5 @@ streamlit
 google-generativeai
 pytz
 google-cloud-speech
+streamlit-webrtc
+pydantic<2
