@@ -7,7 +7,7 @@ from datetime import datetime
 import urllib.parse
 import pytz
 import pandas as pd
-from streamlit_local_storage import LocalStorage # ★新しい武器をインポート
+from streamlit_local_storage import LocalStorage
 
 # --- ローカルストレージの初期化 ---
 localS = LocalStorage()
@@ -25,21 +25,24 @@ with st.sidebar:
     st.divider()
     st.header("⚙️ APIキー設定")
 
-    # ★★★ ここからが、究極の利便性アップデート ★★★
-    # 1. まず、ローカルストレージから、保存済みのキーを、読み込んでみる
+    # ★★★ ここからが、最後の、究極の、バグ修正 ★★★
+    # 1. ローカルストレージからキーを読み込む
     saved_gemini_key = localS.getItem("gemini_api_key")
     saved_speech_key = localS.getItem("speech_api_key")
 
-    # 2. 読み込んだキーを、入力欄の「初期値」として、設定する
-    gemini_api_key = st.text_input("1. Gemini APIキー", type="password", value=saved_gemini_key.get("value") if saved_gemini_key else "", help="Google AI Studioで取得したキー")
-    speech_api_key = st.text_input("2. Speech-to-Text APIキー", type="password", value=saved_speech_key.get("value") if saved_speech_key else "", help="Google Cloud Platformで取得したキー")
+    # 2. キーが存在し、かつ、辞書の形をしているか、優しく確認してから、値を取り出す
+    gemini_default_value = saved_gemini_key['value'] if isinstance(saved_gemini_key, dict) and 'value' in saved_gemini_key else ""
+    speech_default_value = saved_speech_key['value'] if isinstance(saved_speech_key, dict) and 'value' in saved_speech_key else ""
 
-    # 3. ボタンを押した時に、入力されている値を、保存する
-    if st.button("APIキーをブラウザに保存"):
+    # 3. 取り出した値を、入力欄の初期値として設定する
+    gemini_api_key = st.text_input("1. Gemini APIキー", type="password", value=gemini_default_value, help="Google AI Studioで取得したキー")
+    speech_api_key = st.text_input("2. Speech-to-Text APIキー", type="password", value=speech_default_value, help="Google Cloud Platformで取得したキー")
+
+    # 4. 「保存ボタン」が押された時にだけ、保存処理を実行する
+    if st.button("APIキーをこのブラウザに保存する"):
         localS.setItem("gemini_api_key", gemini_api_key)
         localS.setItem("speech_api_key", speech_api_key)
-        st.success("APIキーをこのブラウザに保存しました！")
-
+        st.success("キーを保存しました！ページをリロードして、キーが記憶されているか確認してください。")
 
     st.divider()
     st.markdown("""
@@ -49,7 +52,7 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
 
-# --- バックエンド関数 (変更なし) ---
+# --- (これ以降の、バックエンド関数、および、各ツールの機能のコードは、一切、変更ありません) ---
 def transcribe_audio(audio_bytes, api_key):
     if not audio_bytes or not api_key: return None
     client_options = ClientOptions(api_key=api_key); client = speech.SpeechClient(client_options=client_options)
@@ -67,7 +70,6 @@ def create_google_calendar_url(details):
     except (ValueError, KeyError): dates = ""
     base_url = "https://www.google.com/calendar/render?action=TEMPLATE"; params = { "text": details.get('title', ''), "dates": dates, "location": details.get('location', ''), "details": details.get('details', '') }; encoded_params = urllib.parse.urlencode(params, quote_via=urllib.parse.quote); return f"{base_url}&{encoded_params}"
 
-# --- メイン画面の描画 ---
 if tool_choice == "📅 カレンダー登録":
     st.header("📅 あなただけのAI秘書")
     st.info("テキストで直接入力するか、音声ファイルをアップロードして、カレンダーへの予定追加などをAIに伝えてください。")
