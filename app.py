@@ -1,7 +1,7 @@
 import streamlit as st
-import openai
+import google.generativeai as genai
 import json
-from datetime import datetime, timedelta
+from datetime import datetime
 import urllib.parse
 
 # --- アプリの基本設定 ---
@@ -12,16 +12,16 @@ st.set_page_config(
 )
 
 st.title("🤖 AIアシスタント・ポータル")
-st.caption("あなたの業務をAIがサポートします")
+st.caption("あなたの業務をAIがサポートします (Powered by Google Gemini)")
 
 # --- サイドバー：APIキー設定 ---
 with st.sidebar:
     st.header("⚙️ 設定")
-    openai_api_key = st.text_input("OpenAI APIキー", type="password")
+    google_api_key = st.text_input("Google AI APIキー", type="password")
     st.markdown("""
     <div style="font-size: 0.9em;">
-    OpenAIのAPIキーをここに貼り付けてください。<br>
-    <a href="https://platform.openai.com/account/api-keys" target="_blank">APIキーの取得はこちら</a>
+    Google AI StudioのAPIキーをここに貼り付けてください。<br>
+    <a href="https://aistudio.google.com/app/apikey" target="_blank">APIキーの取得はこちら</a>
     </div>
     """, unsafe_allow_html=True)
     st.divider()
@@ -35,21 +35,17 @@ with st.sidebar:
 
 # --- GoogleカレンダーURL生成関数 ---
 def create_google_calendar_url(details):
-    # 日時をGoogleカレンダーが要求する形式 (YYYYMMDDTHHMMSSZ) に変換
     try:
         start_time_dt = datetime.fromisoformat(details['start_time'])
         end_time_dt = datetime.fromisoformat(details['end_time'])
         
-        # UTC形式の文字列に変換（ZはUTCを示す）
         start_time_str = start_time_dt.strftime('%Y%m%dT%H%M%SZ')
         end_time_str = end_time_dt.strftime('%Y%m%dT%H%M%SZ')
 
         dates = f"{start_time_str}/{end_time_str}"
     except (ValueError, KeyError):
-        # 日時が正しく取得できなかった場合はdatesを空にする
         dates = ""
 
-    # URLエンコード
     base_url = "https://www.google.com/calendar/render?action=TEMPLATE"
     params = {
         "text": details.get('title', ''),
@@ -66,32 +62,28 @@ st.header("📅 AIカレンダー秘書")
 st.info("「来週火曜の15時からAさんと会議」「明日の朝9時に企画書の作成」のように話しかけてみてください。")
 
 # --- チャット機能 ---
-# チャット履歴の初期化
 if "messages" not in st.session_state:
     st.session_state.messages = [
         {"role": "assistant", "content": "こんにちは！どのようなご予定を登録しますか？"}
     ]
 
-# 履歴の表示
 for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
+    # "assistant" roleを "model" にマッピング
+    role = "model" if message["role"] == "assistant" else message["role"]
+    with st.chat_message(role):
         st.markdown(message["content"])
 
-# ユーザーからの入力
 if prompt := st.chat_input("予定を入力してください..."):
-    # APIキーのチェック
-    if not openai_api_key:
-        st.error("サイドバーにOpenAI APIキーを入力してください。")
+    if not google_api_key:
+        st.error("サイドバーにGoogle AI APIキーを入力してください。")
         st.stop()
 
-    # ユーザーのメッセージを履歴に追加して表示
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # AIへのリクエスト
     try:
-        client = openai.OpenAI(api_key=openai_api_key)
+        genai.configure(api_key=google_api_key)
         
         system_prompt = f"""
         あなたは、自然言語からGoogleカレンダーの予定を作成するための情報を抽出する、非常に優秀なアシスタントです。
@@ -100,6 +92,7 @@ if prompt := st.chat_input("予定を入力してください..."):
         - 日時は必ず `YYYY-MM-DDTHH:MM:SS` というISO 8601形式で出力してください。
         - `end_time` が不明な場合は、`start_time` の1時間後を自動的に設定してください。
         - 抽出した情報は、必ず以下のJSON形式のみで回答してください。他の言葉は一切含めないでください。
+        ```json
         {{
           "title": "（ここに件名）",
           "start_time": "YYYY-MM-DDTHH:MM:SS",
@@ -107,26 +100,22 @@ if prompt := st.chat_input("予定を入力してください..."):
           "location": "（ここに場所）",
           "details": "（ここに詳細）"
         }}
+        ```
         """
+        
+        model = genai.GenerativeModel('gemini-1.5-flash-latest', system_instruction=system_prompt)
 
         with st.chat_message("assistant"):
             with st.spinner("AIが予定を組み立てています..."):
-                response = client.chat.completions.create(
-                    model="gpt-4o",  # 最新の高性能モデルを利用
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": prompt}
-                    ],
-                    response_format={"type": "json_object"}
-                )
+                response = model.generate_content(prompt)
                 
                 # AIからの応答（JSON）を解析
-                schedule_details = json.loads(response.choices[0].message.content)
+                # レスポンスからJSON部分を抽出
+                json_text = response.text.strip().lstrip("```json").rstrip("```")
+                schedule_details = json.loads(json_text)
                 
-                # GoogleカレンダーのURLを生成
                 calendar_url = create_google_calendar_url(schedule_details)
                 
-                # AIの応答メッセージを作成
                 ai_response = f"""以下の内容で承りました。よろしければリンクをクリックしてカレンダーに登録してください。
 
 - **件名:** {schedule_details.get('title', '未設定')}
