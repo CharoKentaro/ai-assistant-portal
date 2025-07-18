@@ -4,7 +4,7 @@ import json
 from datetime import datetime
 import urllib.parse
 import pytz
-from streamlit_speech_to_text import speech_to_text # ★新しい音声認識部品をインポート
+from streamlit_speech_to_text import speech_to_text # 新しい音声認識部品をインポート
 
 # --- (アプリの基本設定、サイドバー、カレンダーURL生成関数は前回と全く同じ) ---
 # --- ここから ---
@@ -61,7 +61,7 @@ def create_google_calendar_url(details):
 
 # --- メイン画面 ---
 st.header("📅 AIカレンダー秘書")
-st.info("下のテキストボックスに直接入力するか、マイクボタンを押して話しかけてみてください。")
+st.info("下のタブで入力方法を選んで、AIに話しかけてみてください。")
 
 # --- チャット履歴の表示 (変更なし) ---
 if "messages" not in st.session_state:
@@ -74,24 +74,28 @@ for message in st.session_state.messages:
     with st.chat_message(role):
         st.markdown(message["content"])
 
-# --- ★ここから入力部分を究極アップデート ---
+# --- ★ここから入力部分をタブで完全に分離する ---
+prompt = None
+tab1, tab2 = st.tabs(["🎙️ 音声で入力", "⌨️ キーボードで入力"])
 
-# 音声認識ウィジェットを配置
-# speech_to_textは、ボタンが押されて音声が認識されると、そのテキストを返す
-# 何もなければNoneを返す
-st.write("↓ マイクボタンを押して話してください")
-voice_prompt = speech_to_text(
-    language='ja',
-    start_prompt="🎙️ 音声で入力する",
-    stop_prompt="⏹️ 録音を停止",
-    key='speech_input'
-)
+with tab1:
+    # 音声入力タブ
+    st.write("マイクボタンを押して、話し終わったらもう一度押してください。")
+    voice_prompt = speech_to_text(
+        language='ja',
+        start_prompt="▶️ 録音開始",
+        stop_prompt="⏹️ 録音停止",
+        just_once=True, # 1回認識したら値を返す
+        key='speech_input_tab'
+    )
+    if voice_prompt:
+        prompt = voice_prompt
 
-# テキスト入力ウィジェットを配置
-text_prompt = st.chat_input("または、キーボードで入力...")
-
-# 最終的なプロンプトを決定（音声が優先）
-prompt = voice_prompt if voice_prompt else text_prompt
+with tab2:
+    # キーボード入力タブ
+    text_prompt = st.chat_input("予定を入力してください...", key="chat_input_tab")
+    if text_prompt:
+        prompt = text_prompt
 
 # --- ★ここまで入力部分のアップデート ---
 
