@@ -6,41 +6,46 @@ import json
 from datetime import datetime
 import urllib.parse
 import pytz
-from streamlit_webrtc import webrtc_streamer, WebRtcMode, ClientSettings
 
 # --- アプリの基本設定 ---
-st.set_page_config(page_title="最終実験：UIバイパス作戦", page_icon="🔬", layout="wide")
-st.title("🔬 最終実験：UIバイパス作戦")
-st.info("この実験の目的は、音声認識の結果を画面に表示せず、直接AIに伝達することで、UIの競合エラーを回避できるか、その一点を確認することです。")
+st.set_page_config(page_title="AIアシスタント・ポータル", page_icon="🤖", layout="wide")
+st.title("🤖 AIアシスタント・ポータル")
+st.caption("あなたの業務をAIがサポートします (Powered by Google Cloud)")
 
 # --- サイドバー：APIキー設定 ---
 with st.sidebar:
     st.header("⚙️ 設定")
-    gemini_api_key = st.text_input("1. Gemini APIキー", type="password")
-    speech_api_key = st.text_input("2. Speech-to-Text APIキー", type="password")
+    gemini_api_key = st.text_input("1. Gemini APIキー", type="password", help="Google AI Studioで取得した、AIと会話するためのキーを貼り付けてください。")
+    speech_api_key = st.text_input("2. Speech-to-Text APIキー", type="password", help="Google Cloud Platformで取得した、音声を文字に変換するためのキーを貼り付けてください。")
     st.divider()
     st.markdown("""
     <div style="font-size: 0.9em;">
-    <a href="https://aistudio.google.com/app/apikey" target="_blank">1. Gemini APIキーの取得</a><br>
-    <a href="https://console.cloud.google.com/apis/credentials" target="_blank">2. Speech-to-Text APIキーの取得</a>
+    <a href="https://aistudio.google.com/app/apikey" target="_blank">1. Gemini APIキーの取得はこちら</a><br>
+    <a href="https://console.cloud.google.com/apis/credentials" target="_blank">2. Speech-to-Text APIキーの取得はこちら</a>
     </div>
     """, unsafe_allow_html=True)
 
-# --- バックエンド関数 (変更なし) ---
-def transcribe_audio(audio_frames, api_key):
-    if not audio_frames or not api_key: return None
+# --- Google Speech-to-Text APIを叩く関数 ---
+def transcribe_audio(audio_bytes, api_key):
+    if not audio_bytes or not api_key: return None
     client_options = ClientOptions(api_key=api_key)
     client = speech.SpeechClient(client_options=client_options)
-    audio_bytes = b"".join(frame.to_ndarray().tobytes() for frame in audio_frames)
     audio = speech.RecognitionAudio(content=audio_bytes)
-    config = speech.RecognitionConfig(encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16, sample_rate_hertz=48000, language_code="ja-JP")
+    # 様々な音声ファイルに対応できるよう、より柔軟な設定に変更
+    config = speech.RecognitionConfig(
+        # encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16, # ファイル形式から自動で判断させる
+        # sample_rate_hertz=48000, # ファイル形式から自動で判断させる
+        language_code="ja-JP",
+        audio_channel_count=1
+    )
     try:
         response = client.recognize(config=config, audio=audio)
         if response.results: return response.results[0].alternatives[0].transcript
     except Exception as e:
-        st.error(f"音声認識エラー: {e}")
+        st.error(f"音声認識でエラーが発生しました。ファイルの形式がサポートされていないか、内容が空の可能性があります。: {e}")
     return None
 
+# --- GoogleカレンダーURL生成関数 (変更なし) ---
 def create_google_calendar_url(details):
     try:
         jst = pytz.timezone('Asia/Tokyo'); start_time_naive = datetime.fromisoformat(details['start_time']); end_time_naive = datetime.fromisoformat(details['end_time']); start_time_jst = jst.localize(start_time_naive); end_time_jst = jst.localize(end_time_naive); start_time_utc = start_time_jst.astimezone(pytz.utc); end_time_utc = end_time_jst.astimezone(pytz.utc); start_time_str = start_time_utc.strftime('%Y%m%dT%H%M%SZ'); end_time_str = end_time_utc.strftime('%Y%m%dT%H%M%SZ'); dates = f"{start_time_str}/{end_time_str}"
@@ -49,7 +54,11 @@ def create_google_calendar_url(details):
 
 # --- セッションステートの初期化 ---
 if "messages" not in st.session_state:
-    st.session_state.messages = [{"role": "assistant", "content": "こんにちは！テキストで入力するか、マイクで録音して下のボタンを押してください。"}]
+    st.session_state.messages = [{"role": "assistant", "content": "こんにちは！どのようなご予定を登録しますか？"}]
+
+# --- メイン画面 ---
+st.header("📅 AIカレンダー秘書")
+st.info("テキストで直接入力するか、音声ファイルをアップロードしてAIに伝えてください。")
 
 # --- チャット履歴の表示 ---
 for message in st.session_state.messages:
@@ -60,23 +69,19 @@ for message in st.session_state.messages:
 # --- 入力部分 ---
 prompt = None
 
-# 音声入力ウィジェット
-webrtc_ctx = webrtc_streamer(key="speech-to-text", mode=WebRtcMode.SEND_ONLY, audio_receiver_size=1024, client_settings=ClientSettings(rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}, media_stream_constraints={"video": False, "audio": True},))
-
-# 音声入力の処理ボタン
-if st.button("録音した音声をAIに直接伝える"):
-    if not speech_api_key or not gemini_api_key:
-        st.error("サイドバーに両方のAPIキーを入力してください。")
-    elif webrtc_ctx.audio_receiver:
-        audio_frames = webrtc_ctx.audio_receiver.get_frames()
-        with st.spinner("音声を認識し、AIに伝えています..."):
-            transcript = transcribe_audio(audio_frames, speech_api_key)
-            if transcript:
-                prompt = transcript # ★★★ ここが重要！認識結果を直接プロンプトに代入 ★★★
-            else:
-                st.warning("音声を認識できませんでした。")
+# 音声ファイルアップロード機能
+uploaded_file = st.file_uploader("ボイスメモなどの音声ファイルをアップロード:", type=['wav', 'mp3', 'm4a', 'flac'])
+if uploaded_file is not None:
+    if not speech_api_key:
+        st.error("サイドバーにSpeech-to-Text APIキーを入力してください。")
     else:
-        st.warning("まず上のマイクボタンを押して、録音を開始してください。")
+        with st.spinner("音声ファイルを文字に変換中..."):
+            audio_bytes = uploaded_file.getvalue()
+            transcript = transcribe_audio(audio_bytes, speech_api_key)
+            if transcript:
+                prompt = transcript
+            else:
+                st.warning("音声の認識に失敗しました。")
 
 # テキスト入力
 text_prompt = st.chat_input("または、キーボードで入力...")
@@ -85,17 +90,15 @@ if text_prompt:
 
 # --- チャット処理 ---
 if prompt:
-    # 画面には、ユーザーが入力した（とみなされる）プロンプトを表示する
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.markdown(prompt)
-    
+    if not gemini_api_key: st.error("サイドバーにGemini APIキーを入力してください。"); st.stop()
+    st.session_state.messages.append({"role": "user", "content": prompt});
+    with st.chat_message("user"): st.markdown(prompt)
     try:
         genai.configure(api_key=gemini_api_key)
         jst = pytz.timezone('Asia/Tokyo')
         current_time_jst = datetime.now(jst).isoformat()
         system_prompt = f"""
-        あなたは、ユーザーから渡されたテキスト（キーボード入力、または音声入力を文字起こししたもの）を解釈し、Googleカレンダーの予定を作成する情報を抽出する、非常に優秀なアシスタントです。
+        あなたは、ユーザーから渡されたテキスト（キーボード入力、または音声ファイルを文字起こししたもの）を解釈し、Googleカレンダーの予定を作成する情報を抽出する、非常に優秀なアシスタントです。
         ユーザーのテキストから「title (件名)」「start_time (開始日時)」「end_time (終了日時)」「location (場所)」「details (詳細説明)」を抽出してください。
         - 現在の日時は `{current_time_jst}` です。これは日本標準時(JST)です。この日時を基準に「明日」「来週」などを解釈してください。
         - 日時は必ず `YYYY-MM-DDTHH:MM:SS` というISO 8601形式で出力してください。
@@ -112,7 +115,6 @@ if prompt:
         ```
         """
         model = genai.GenerativeModel('gemini-1.5-flash-latest', system_instruction=system_prompt)
-        
         with st.chat_message("assistant"):
             with st.spinner("AIが予定を組み立てています..."):
                 response = model.generate_content(prompt)
@@ -124,7 +126,5 @@ if prompt:
                 ai_response = f"""以下の内容で承りました。よろしければリンクをクリックしてカレンダーに登録してください。\n\n- **件名:** {schedule_details.get('title', '未設定')}\n- **日時:** {display_start_time}\n- **場所:** {schedule_details.get('location', '未設定')}\n- **詳細:** {schedule_details.get('details', '未設定')}\n\n[📅 Googleカレンダーにこの予定を追加する]({calendar_url})"""
                 st.markdown(ai_response)
                 st.session_state.messages.append({"role": "assistant", "content": ai_response})
-
     except Exception as e:
-        st.error(f"エラーが発生しました: {e}")
-        st.session_state.messages.append({"role": "assistant", "content": f"申し訳ありません、エラーが発生しました。({e})"})
+        st.error(f"エラーが発生しました: {e}"); st.session_state.messages.append({"role": "assistant", "content": f"申し訳ありません、エラーが発生しました。({e})"})
