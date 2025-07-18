@@ -2,3 +2,4 @@ streamlit
 openai
 google-generativeai
 pytz
+streamlit-mic-recorder
