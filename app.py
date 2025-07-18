@@ -7,6 +7,10 @@ from datetime import datetime
 import urllib.parse
 import pytz
 import pandas as pd
+from streamlit_local_storage import LocalStorage # ★新しい武器をインポート
+
+# --- ローカルストレージの初期化 ---
+localS = LocalStorage()
 
 # --- アプリの基本設定 ---
 st.set_page_config(page_title="AIアシスタント・ポータル", page_icon="🤖", layout="wide")
@@ -14,15 +18,29 @@ st.set_page_config(page_title="AIアシスタント・ポータル", page_icon="
 # --- サイドバー ---
 with st.sidebar:
     st.title("🤖 AIアシスタント・ポータル")
-    # ★★★ あなたの改善案を反映 ★★★
     tool_choice = st.radio(
         "使いたいツールを選んでください:",
         ("📅 カレンダー登録", "💹 価格リサーチ", "📝 議事録作成", "🚇 AI乗り換え案内")
     )
     st.divider()
     st.header("⚙️ APIキー設定")
-    gemini_api_key = st.text_input("1. Gemini APIキー", type="password", help="Google AI Studioで取得したキー")
-    speech_api_key = st.text_input("2. Speech-to-Text APIキー", type="password", help="Google Cloud Platformで取得したキー")
+
+    # ★★★ ここからが、究極の利便性アップデート ★★★
+    # 1. まず、ローカルストレージから、保存済みのキーを、読み込んでみる
+    saved_gemini_key = localS.getItem("gemini_api_key")
+    saved_speech_key = localS.getItem("speech_api_key")
+
+    # 2. 読み込んだキーを、入力欄の「初期値」として、設定する
+    gemini_api_key = st.text_input("1. Gemini APIキー", type="password", value=saved_gemini_key.get("value") if saved_gemini_key else "", help="Google AI Studioで取得したキー")
+    speech_api_key = st.text_input("2. Speech-to-Text APIキー", type="password", value=saved_speech_key.get("value") if saved_speech_key else "", help="Google Cloud Platformで取得したキー")
+
+    # 3. ボタンを押した時に、入力されている値を、保存する
+    if st.button("APIキーをブラウザに保存"):
+        localS.setItem("gemini_api_key", gemini_api_key)
+        localS.setItem("speech_api_key", speech_api_key)
+        st.success("APIキーをこのブラウザに保存しました！")
+
+
     st.divider()
     st.markdown("""
     <div style="font-size: 0.9em;">
@@ -31,7 +49,7 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
 
-# --- バックエンド関数 ---
+# --- バックエンド関数 (変更なし) ---
 def transcribe_audio(audio_bytes, api_key):
     if not audio_bytes or not api_key: return None
     client_options = ClientOptions(api_key=api_key); client = speech.SpeechClient(client_options=client_options)
@@ -50,19 +68,13 @@ def create_google_calendar_url(details):
     base_url = "https://www.google.com/calendar/render?action=TEMPLATE"; params = { "text": details.get('title', ''), "dates": dates, "location": details.get('location', ''), "details": details.get('details', '') }; encoded_params = urllib.parse.urlencode(params, quote_via=urllib.parse.quote); return f"{base_url}&{encoded_params}"
 
 # --- メイン画面の描画 ---
-# ★★★ 私が修正した、最後のバグ修正箇所 ★★★
 if tool_choice == "📅 カレンダー登録":
-    st.header("📅 あなただけのAI秘書") # ヘッダーは、あなたの意図通り、このまま
+    st.header("📅 あなただけのAI秘書")
     st.info("テキストで直接入力するか、音声ファイルをアップロードして、カレンダーへの予定追加などをAIに伝えてください。")
-    
-    # ★あなたの改善案を反映
-    if "cal_messages" not in st.session_state:
-        st.session_state.cal_messages = [{"role": "assistant", "content": "こんにちは！私はあなただけのAI秘書です。サイドバーでAPIキーを登録して、自由に使ってくださいませ。まずはカレンダーにご予定をどうぞ！"}]
-        
+    if "cal_messages" not in st.session_state: st.session_state.cal_messages = [{"role": "assistant", "content": "こんにちは！私はあなただけのAI秘書です。サイドバーでAPIキーを登録して、自由に使ってくださいませ。まずはカレンダーにご予定をどうぞ！"}]
     for message in st.session_state.cal_messages:
         role = "model" if message["role"] == "assistant" else message["role"]
         with st.chat_message(role): st.markdown(message["content"])
-        
     prompt = None
     uploaded_file = st.file_uploader("音声ファイルをアップロード:", type=['wav', 'mp3', 'm4a', 'flac'], key="cal_uploader")
     if uploaded_file is not None:
@@ -72,10 +84,8 @@ if tool_choice == "📅 カレンダー登録":
                 audio_bytes = uploaded_file.getvalue(); transcript = transcribe_audio(audio_bytes, speech_api_key)
                 if transcript: prompt = transcript
                 else: st.warning("音声の認識に失敗しました。")
-    
     text_prompt = st.chat_input("または、キーボードで入力...", key="cal_text_input")
     if text_prompt: prompt = text_prompt
-    
     if prompt:
         if not gemini_api_key: st.error("サイドバーにGemini APIキーを入力してください。"); st.stop()
         st.session_state.cal_messages.append({"role": "user", "content": prompt})
