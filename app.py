@@ -16,13 +16,13 @@ with st.sidebar:
     st.title("🤖 AIアシスタント・ポータル")
     
     # ★★★ UX改善ポイント ★★★
-    # スマホ表示でサイドバーが分かりやすくなるように、タイトルを追加
-    st.markdown("### >> メニューと設定")
+    # サイドバーが開かれた時に、何のメニューか分かりやすくするためのタイトル
+    st.header("ツール選択") 
     
+    # ★ツール名を「あなただけのAI秘書」に変更
     tool_choice = st.radio(
         "使いたいツールを選んでください:",
-        ("📅 あなただけのAI秘書", "💹 価格リサーチ", "📝 議事録作成"), # ★ツール名を変更
-        key="tool_selector"
+        ("📅 あなただけのAI秘書", "💹 価格リサーチ", "📝 議事録作成")
     )
     st.divider()
     
@@ -58,11 +58,17 @@ def create_google_calendar_url(details):
 # --- メイン画面の描画 ---
 # ★★★ UX改善ポイント ★★★
 if tool_choice == "📅 あなただけのAI秘書":
+    # ★ヘッダーも「あなただけのAI秘書」に変更
     st.header("📅 あなただけのAI秘書")
     st.info("テキストで直接入力するか、音声ファイルをアップロードして、カレンダーへの予定追加などをAIに伝えてください。")
     
+    # ★挨拶メッセージを変更
+    # セッションステートをクリアするためのボタンを追加
+    if st.button("チャット履歴をリセット"):
+        st.session_state.cal_messages = [{"role": "assistant", "content": "こんにちは！私はあなただけのAI秘書です。サイドバーでAPIキーを登録して、自由に使ってくださいませ。"}]
+        st.rerun()
+
     if "cal_messages" not in st.session_state:
-        # ★挨拶メッセージを変更
         st.session_state.cal_messages = [{"role": "assistant", "content": "こんにちは！私はあなただけのAI秘書です。サイドバーでAPIキーを登録して、自由に使ってくださいませ。"}]
 
     for message in st.session_state.cal_messages:
@@ -70,9 +76,7 @@ if tool_choice == "📅 あなただけのAI秘書":
         with st.chat_message(role): st.markdown(message["content"])
 
     prompt = None
-    # ★アップロードボタンのラベルを日本語に変更
-    uploaded_file = st.file_uploader("音声ファイルをアップロード:", type=['wav', 'mp3', 'm4a', 'flac'], key="cal_uploader", label_visibility="visible")
-    
+    uploaded_file = st.file_uploader("音声ファイルをアップロード:", type=['wav', 'mp3', 'm4a', 'flac'], key="cal_uploader")
     if uploaded_file is not None:
         if not speech_api_key: st.error("サイドバーにSpeech-to-Text APIキーを入力してください。")
         else:
@@ -166,8 +170,7 @@ elif tool_choice == "📝 議事録作成":
     st.header("📝 音声ファイルから議事録を作成")
     st.info("会議などを録音した音声ファイルをアップロードすると、AIが文字起こしを行い、テキストファイルとしてダウンロードできます。")
     if "transcript_text" not in st.session_state: st.session_state.transcript_text = None
-    # ★アップロードボタンのラベルを日本語に変更
-    議事録_file = st.file_uploader("議事録を作成したい音声ファイルをアップロードしてください:", type=['wav', 'mp3', 'm4a', 'flac'], key="transcript_uploader", label_visibility="visible")
+    議事録_file = st.file_uploader("議事録を作成したい音声ファイルをアップロードしてください:", type=['wav', 'mp3', 'm4a', 'flac'], key="transcript_uploader")
     if st.button("この音声ファイルから議事録を作成する"):
         if not speech_api_key: st.error("サイドバーにSpeech-to-Text APIキーを入力してください。")
         elif 議事録_file is None: st.warning("音声ファイルをアップロードしてください。")
