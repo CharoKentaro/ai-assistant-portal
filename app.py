@@ -4,7 +4,7 @@ import json
 from datetime import datetime
 import urllib.parse
 import pytz
-from streamlit_mic_recorder import mic_recorder # ★音声入力の部品を追加
+from streamlit_speech_to_text import speech_to_text # ★新しい音声認識部品をインポート
 
 # --- (アプリの基本設定、サイドバー、カレンダーURL生成関数は前回と全く同じ) ---
 # --- ここから ---
@@ -57,7 +57,6 @@ def create_google_calendar_url(details):
     }
     encoded_params = urllib.parse.urlencode(params, quote_via=urllib.parse.quote)
     return f"{base_url}&{encoded_params}"
-
 # --- ここまで変更なし ---
 
 # --- メイン画面 ---
@@ -75,37 +74,24 @@ for message in st.session_state.messages:
     with st.chat_message(role):
         st.markdown(message["content"])
 
-# --- ★ここから入力部分を大幅アップデート ---
-# 音声入力をセッションステートで管理
-if 'voice_text' not in st.session_state:
-    st.session_state.voice_text = None
+# --- ★ここから入力部分を究極アップデート ---
 
-# 音声入力ウィジェット
-voice_input = mic_recorder(
-    start_prompt="▶️ 音声入力を開始",
-    stop_prompt="⏹️ 音声入力を停止",
-    key='voice_recorder'
+# 音声認識ウィジェットを配置
+# speech_to_textは、ボタンが押されて音声が認識されると、そのテキストを返す
+# 何もなければNoneを返す
+st.write("↓ マイクボタンを押して話してください")
+voice_prompt = speech_to_text(
+    language='ja',
+    start_prompt="🎙️ 音声で入力する",
+    stop_prompt="⏹️ 録音を停止",
+    key='speech_input'
 )
 
-# 音声が認識されたら、そのテキストを保存
-if voice_input and 'bytes' in voice_input:
-    # このライブラリは音声認識機能を持たないため、ダミー処理とします
-    # 実際には、ここでブラウザのWeb Speech APIを叩くコンポーネントか、
-    # 音声データをサーバーに送って文字起こしAPI（例: OpenAI Whisper）を叩く処理が必要
-    # ここでは、よりシンプルな「テキスト入力と音声入力ボタン」のUIデモとします。
-    pass # ダミー処理
+# テキスト入力ウィジェットを配置
+text_prompt = st.chat_input("または、キーボードで入力...")
 
-# 音声入力とテキスト入力を統合する新しいUI
-col1, col2 = st.columns([4, 1])
-with col1:
-    text_prompt = st.chat_input("キーボードで入力...", key="text_input")
-with col2:
-    # 音声入力ボタン（これはUIのデモです）
-    if st.button("🎙️", help="音声で入力（開発中）"):
-        st.info("現在、音声入力機能は開発中です。テキストで入力してください。")
-
-# 最終的なプロンプトを決定
-prompt = text_prompt
+# 最終的なプロンプトを決定（音声が優先）
+prompt = voice_prompt if voice_prompt else text_prompt
 
 # --- ★ここまで入力部分のアップデート ---
 
