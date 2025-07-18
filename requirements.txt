@@ -3,3 +3,4 @@ google-generativeai
 pytz
 google-cloud-speech
 pandas
+streamlit-local-storage
