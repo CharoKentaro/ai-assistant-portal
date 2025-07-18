@@ -28,7 +28,6 @@ with st.sidebar:
 
 # --- Google Speech-to-Text APIを叩く関数 (APIキーを使う方式) ---
 def transcribe_audio(audio_frames, api_key):
-    # (この関数は前回と全く同じなので、変更なし)
     if not audio_frames or not api_key: return None
     client_options = ClientOptions(api_key=api_key)
     client = speech.SpeechClient(client_options=client_options)
@@ -44,7 +43,6 @@ def transcribe_audio(audio_frames, api_key):
 
 # --- GoogleカレンダーURL生成関数 (変更なし) ---
 def create_google_calendar_url(details):
-    # (この関数は前回と全く同じなので、変更なし)
     try:
         jst = pytz.timezone('Asia/Tokyo'); start_time_naive = datetime.fromisoformat(details['start_time']); end_time_naive = datetime.fromisoformat(details['end_time']); start_time_jst = jst.localize(start_time_naive); end_time_jst = jst.localize(end_time_naive); start_time_utc = start_time_jst.astimezone(pytz.utc); end_time_utc = end_time_jst.astimezone(pytz.utc); start_time_str = start_time_utc.strftime('%Y%m%dT%H%M%SZ'); end_time_str = end_time_utc.strftime('%Y%m%dT%H%M%SZ'); dates = f"{start_time_str}/{end_time_str}"
     except (ValueError, KeyError): dates = ""
@@ -53,64 +51,59 @@ def create_google_calendar_url(details):
 # --- ★セッションステートの初期化 ---
 if "messages" not in st.session_state:
     st.session_state.messages = [{"role": "assistant", "content": "こんにちは！どのようなご予定を登録しますか？"}]
-if "transcript" not in st.session_state:
-    st.session_state.transcript = None
 
 # --- メイン画面 ---
 st.header("📅 AIカレンダー秘書")
+st.info("テキストで入力するか、マイクで録音してAIに直接伝えてください。")
 
-# --- ★新しいアイデア：音声認識結果の「専用確認エリア」 ---
-if st.session_state.transcript:
-    st.info("以下の内容でAIに伝えますか？")
-    col1, col2 = st.columns([4, 1])
-    with col1:
-        st.write(st.session_state.transcript)
-    with col2:
-        if st.button("✅ はい、これでOK"):
-            prompt = st.session_state.transcript
-            st.session_state.transcript = None # 確認後はクリア
-        if st.button("❌ やり直す"):
-            st.session_state.transcript = None # やり直しでクリア
-            st.rerun() # 画面をリフレッシュ
-else:
-    prompt = None
 
 # --- チャット履歴の表示 ---
+# この部分はUIの書き換えを行うため、メインの処理より先に描画する
 for message in st.session_state.messages:
     role = "model" if message["role"] == "assistant" else message["role"]
     with st.chat_message(role):
         st.markdown(message["content"])
 
-# --- ★入力部分は、タブではなく、シンプルな2つのボタンに ---
-st.divider()
-col1, col2 = st.columns(2)
-with col1:
-    # 音声入力ウィジェット
-    webrtc_ctx = webrtc_streamer(key="speech-to-text", mode=WebRtcMode.SEND_ONLY, audio_receiver_size=1024, client_settings=ClientSettings(rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}, media_stream_constraints={"video": False, "audio": True},))
-    if webrtc_ctx.audio_receiver:
-        if st.button("音声を文字に変換する"):
-            if not speech_api_key:
-                st.error("サイドバーにSpeech-to-Text APIキーを入力してください。")
+
+# --- ★入力部分を、あなたのアイデアに基づいて再構築 ---
+prompt = None
+
+# 音声入力ウィジェットをまず定義
+webrtc_ctx = webrtc_streamer(
+    key="speech-to-text",
+    mode=WebRtcMode.SEND_ONLY,
+    audio_receiver_size=1024,
+    client_settings=ClientSettings(
+        rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
+        media_stream_constraints={"video": False, "audio": True},
+    ),
+)
+
+# 音声入力の処理ボタン
+if st.button("録音した音声で予定を作成"):
+    if not speech_api_key:
+        st.error("サイドバーにSpeech-to-Text APIキーを入力してください。")
+    elif webrtc_ctx.audio_receiver:
+        audio_frames = webrtc_ctx.audio_receiver.get_frames()
+        with st.spinner("音声をAIに伝えています..."):
+            transcript = transcribe_audio(audio_frames, speech_api_key)
+            if transcript:
+                prompt = transcript
             else:
-                audio_frames = webrtc_ctx.audio_receiver.get_frames()
-                with st.spinner("音声を文字に変換中..."):
-                    transcript = transcribe_audio(audio_frames, speech_api_key)
-                    if transcript:
-                        st.session_state.transcript = transcript
-                        st.rerun()
-                    else:
-                        st.warning("音声を認識できませんでした。")
-
-with col2:
-    # テキスト入力
-    text_prompt = st.text_input("または、ここにキーボードで入力してEnter", key="text_input")
-    if text_prompt:
-        prompt = text_prompt
+                st.warning("音声を認識できませんでした。")
+    else:
+        st.warning("まず上のマイクボタンを押して、録音を開始してください。")
 
 
-# --- チャット処理 (変更なし) ---
+# テキスト入力
+text_prompt = st.chat_input("または、キーボードで入力...")
+if text_prompt:
+    prompt = text_prompt
+
+
+# --- チャット処理 ---
 if prompt:
-    # (この処理は前回と全く同じなので、変更なし)
+    # (この処理は前回と全く同じ)
     if not gemini_api_key: st.error("サイドバーにGemini APIキーを入力してください。"); st.stop()
     st.session_state.messages.append({"role": "user", "content": prompt});
     with st.chat_message("user"): st.markdown(prompt)
