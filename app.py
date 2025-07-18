@@ -52,7 +52,7 @@ def create_google_calendar_url(details):
 if tool_choice == "📅 あなただけのAI秘書":
     st.header("📅 あなただけのAI秘書")
     st.info("テキストで直接入力するか、音声ファイルをアップロードして、カレンダーへの予定追加などをAIに伝えてください。")
-    if "cal_messages" not in st.session_state: st.session_state.cal_messages = [{"role": "assistant", "content": "こんにちは！私はあなただけのAI秘書です。サイドバーでAPIキーを登録して、自由に使ってくださいませ。"}]
+    if "cal_messages" not in st.session_state: st.session_state.cal_messages = [{"role": "assistant", "content": "こんにちは！私はあなただけのAI秘書です。サイドバーでAPIキーを登録して、自由に使ってくださいませ。まずはカレンダーにご予定をどうぞ！"}]
     for message in st.session_state.cal_messages:
         role = "model" if message["role"] == "assistant" else message["role"]
         with st.chat_message(role): st.markdown(message["content"])
