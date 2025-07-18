@@ -15,14 +15,18 @@ st.set_page_config(page_title="AIアシスタント・ポータル", page_icon="
 with st.sidebar:
     st.title("🤖 AIアシスタント・ポータル")
     
-    # ★★★ 新しいツール「議事録作成」を追加 ★★★
+    # ★★★ UX改善ポイント ★★★
+    # スマホ表示でサイドバーが分かりやすくなるように、タイトルを追加
+    st.markdown("### >> メニューと設定")
+    
     tool_choice = st.radio(
         "使いたいツールを選んでください:",
-        ("📅 AIカレンダー秘書", "💹 価格リサーチ", "📝 議事録作成")
+        ("📅 あなただけのAI秘書", "💹 価格リサーチ", "📝 議事録作成"), # ★ツール名を変更
+        key="tool_selector"
     )
     st.divider()
     
-    st.header("⚙️ 設定")
+    st.header("⚙️ APIキー設定")
     gemini_api_key = st.text_input("1. Gemini APIキー", type="password", help="Google AI Studioで取得したキー")
     speech_api_key = st.text_input("2. Speech-to-Text APIキー", type="password", help="Google Cloud Platformで取得したキー")
     st.divider()
@@ -36,10 +40,8 @@ with st.sidebar:
 # --- バックエンド関数 (変更なし) ---
 def transcribe_audio(audio_bytes, api_key):
     if not audio_bytes or not api_key: return None
-    client_options = ClientOptions(api_key=api_key)
-    client = speech.SpeechClient(client_options=client_options)
-    audio = speech.RecognitionAudio(content=audio_bytes)
-    config = speech.RecognitionConfig(language_code="ja-JP", audio_channel_count=1)
+    client_options = ClientOptions(api_key=api_key); client = speech.SpeechClient(client_options=client_options)
+    audio = speech.RecognitionAudio(content=audio_bytes); config = speech.RecognitionConfig(language_code="ja-JP", audio_channel_count=1)
     try:
         response = client.recognize(config=config, audio=audio)
         if response.results: return response.results[0].alternatives[0].transcript
@@ -54,16 +56,23 @@ def create_google_calendar_url(details):
     base_url = "https://www.google.com/calendar/render?action=TEMPLATE"; params = { "text": details.get('title', ''), "dates": dates, "location": details.get('location', ''), "details": details.get('details', '') }; encoded_params = urllib.parse.urlencode(params, quote_via=urllib.parse.quote); return f"{base_url}&{encoded_params}"
 
 # --- メイン画面の描画 ---
-if tool_choice == "📅 AIカレンダー秘書":
-    # (カレンダー秘書の機能は変更なし)
-    st.header("📅 AIカレンダー秘書")
-    st.info("テキストで直接入力するか、音声ファイルをアップロードして、カレンダーに追加したい予定をAIに伝えてください。")
-    if "cal_messages" not in st.session_state: st.session_state.cal_messages = [{"role": "assistant", "content": "こんにちは！どのようなご予定を登録しますか？"}]
+# ★★★ UX改善ポイント ★★★
+if tool_choice == "📅 あなただけのAI秘書":
+    st.header("📅 あなただけのAI秘書")
+    st.info("テキストで直接入力するか、音声ファイルをアップロードして、カレンダーへの予定追加などをAIに伝えてください。")
+    
+    if "cal_messages" not in st.session_state:
+        # ★挨拶メッセージを変更
+        st.session_state.cal_messages = [{"role": "assistant", "content": "こんにちは！私はあなただけのAI秘書です。サイドバーでAPIキーを登録して、自由に使ってくださいませ。"}]
+
     for message in st.session_state.cal_messages:
         role = "model" if message["role"] == "assistant" else message["role"]
         with st.chat_message(role): st.markdown(message["content"])
+
     prompt = None
-    uploaded_file = st.file_uploader("音声ファイルをアップロード:", type=['wav', 'mp3', 'm4a', 'flac'], key="cal_uploader")
+    # ★アップロードボタンのラベルを日本語に変更
+    uploaded_file = st.file_uploader("音声ファイルをアップロード:", type=['wav', 'mp3', 'm4a', 'flac'], key="cal_uploader", label_visibility="visible")
+    
     if uploaded_file is not None:
         if not speech_api_key: st.error("サイドバーにSpeech-to-Text APIキーを入力してください。")
         else:
@@ -71,8 +80,10 @@ if tool_choice == "📅 AIカレンダー秘書":
                 audio_bytes = uploaded_file.getvalue(); transcript = transcribe_audio(audio_bytes, speech_api_key)
                 if transcript: prompt = transcript
                 else: st.warning("音声の認識に失敗しました。")
+    
     text_prompt = st.chat_input("または、キーボードで入力...", key="cal_text_input")
     if text_prompt: prompt = text_prompt
+
     if prompt:
         if not gemini_api_key: st.error("サイドバーにGemini APIキーを入力してください。"); st.stop()
         st.session_state.cal_messages.append({"role": "user", "content": prompt})
@@ -114,7 +125,6 @@ if tool_choice == "📅 AIカレンダー秘書":
             st.error(f"エラーが発生しました: {e}"); st.session_state.cal_messages.append({"role": "assistant", "content": f"申し訳ありません、エラーが発生しました。({e})"})
 
 elif tool_choice == "💹 価格リサーチ":
-    # (価格リサーチツールの機能は変更なし)
     st.header("💹 万能！価格リサーチツール")
     st.info("調べたいもののキーワードを入力すると、AIが関連商品の価格情報をリサーチし、スプレッドシート用のファイル（CSV）を作成します。")
     keyword = st.text_input("リサーチしたいキーワードを入力してください（例：20代向け メンズ香水, 北海道の人気お土産）")
@@ -152,48 +162,21 @@ elif tool_choice == "💹 価格リサーチ":
                 except Exception as e:
                     st.error(f"リサーチ中にエラーが発生しました: {e}")
 
-# ★★★ ここからが、新しく「追加」された「議事録作成」ツールの機能 ★★★
 elif tool_choice == "📝 議事録作成":
     st.header("📝 音声ファイルから議事録を作成")
     st.info("会議などを録音した音声ファイルをアップロードすると、AIが文字起こしを行い、テキストファイルとしてダウンロードできます。")
-
-    # セッションステートで文字起こし結果を管理
-    if "transcript_text" not in st.session_state:
-        st.session_state.transcript_text = None
-
-    # 音声ファイルアップロード機能
-    議事録_file = st.file_uploader(
-        "議事録を作成したい音声ファイルをアップロードしてください:",
-        type=['wav', 'mp3', 'm4a', 'flac'],
-        key="transcript_uploader"
-    )
-    
+    if "transcript_text" not in st.session_state: st.session_state.transcript_text = None
+    # ★アップロードボタンのラベルを日本語に変更
+    議事録_file = st.file_uploader("議事録を作成したい音声ファイルをアップロードしてください:", type=['wav', 'mp3', 'm4a', 'flac'], key="transcript_uploader", label_visibility="visible")
     if st.button("この音声ファイルから議事録を作成する"):
-        if not speech_api_key:
-            st.error("サイドバーにSpeech-to-Text APIキーを入力してください。")
-        elif 議事録_file is None:
-            st.warning("音声ファイルをアップロードしてください。")
+        if not speech_api_key: st.error("サイドバーにSpeech-to-Text APIキーを入力してください。")
+        elif 議事録_file is None: st.warning("音声ファイルをアップロードしてください。")
         else:
             with st.spinner("音声ファイルを文字に変換しています。長い音声の場合、数分かかることがあります..."):
-                audio_bytes = 議事録_file.getvalue()
-                # transcribe_audio関数を再利用
-                transcript = transcribe_audio(audio_bytes, speech_api_key)
-                if transcript:
-                    st.session_state.transcript_text = transcript
-                else:
-                    st.warning("音声の認識に失敗しました。ファイルが空か、形式が正しくない可能性があります。")
-
-    # 文字起こし結果が表示された場合の処理
+                audio_bytes = 議事録_file.getvalue(); transcript = transcribe_audio(audio_bytes, speech_api_key)
+                if transcript: st.session_state.transcript_text = transcript
+                else: st.warning("音声の認識に失敗しました。ファイルが空か、形式が正しくない可能性があります。")
     if st.session_state.transcript_text:
         st.success("文字起こしが完了しました！")
-        
-        # 結果をテキストエリアに表示
         st.text_area("文字起こし結果", st.session_state.transcript_text, height=300)
-        
-        # テキストファイルとしてダウンロード
-        st.download_button(
-            label="議事録をテキストファイルでダウンロード (.txt)",
-            data=st.session_state.transcript_text.encode('utf_8'),
-            file_name="transcript.txt",
-            mime="text/plain"
-        )
+        st.download_button(label="議事録をテキストファイルでダウンロード (.txt)", data=st.session_state.transcript_text.encode('utf_8'), file_name="transcript.txt", mime="text/plain")
