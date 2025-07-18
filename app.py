@@ -14,6 +14,7 @@ st.set_page_config(page_title="AIアシスタント・ポータル", page_icon="
 # --- サイドバー ---
 with st.sidebar:
     st.title("🤖 AIアシスタント・ポータル")
+    # ★★★ あなたの改善案を反映 ★★★
     tool_choice = st.radio(
         "使いたいツールを選んでください:",
         ("📅 カレンダー登録", "💹 価格リサーチ", "📝 議事録作成", "🚇 AI乗り換え案内")
@@ -49,13 +50,19 @@ def create_google_calendar_url(details):
     base_url = "https://www.google.com/calendar/render?action=TEMPLATE"; params = { "text": details.get('title', ''), "dates": dates, "location": details.get('location', ''), "details": details.get('details', '') }; encoded_params = urllib.parse.urlencode(params, quote_via=urllib.parse.quote); return f"{base_url}&{encoded_params}"
 
 # --- メイン画面の描画 ---
-if tool_choice == "📅 あなただけのAI秘書":
-    st.header("📅 あなただけのAI秘書")
+# ★★★ 私が修正した、最後のバグ修正箇所 ★★★
+if tool_choice == "📅 カレンダー登録":
+    st.header("📅 あなただけのAI秘書") # ヘッダーは、あなたの意図通り、このまま
     st.info("テキストで直接入力するか、音声ファイルをアップロードして、カレンダーへの予定追加などをAIに伝えてください。")
-    if "cal_messages" not in st.session_state: st.session_state.cal_messages = [{"role": "assistant", "content": "こんにちは！私はあなただけのAI秘書です。サイドバーでAPIキーを登録して、自由に使ってくださいませ。まずはカレンダーにご予定をどうぞ！"}]
+    
+    # ★あなたの改善案を反映
+    if "cal_messages" not in st.session_state:
+        st.session_state.cal_messages = [{"role": "assistant", "content": "こんにちは！私はあなただけのAI秘書です。サイドバーでAPIキーを登録して、自由に使ってくださいませ。まずはカレンダーにご予定をどうぞ！"}]
+        
     for message in st.session_state.cal_messages:
         role = "model" if message["role"] == "assistant" else message["role"]
         with st.chat_message(role): st.markdown(message["content"])
+        
     prompt = None
     uploaded_file = st.file_uploader("音声ファイルをアップロード:", type=['wav', 'mp3', 'm4a', 'flac'], key="cal_uploader")
     if uploaded_file is not None:
@@ -65,8 +72,10 @@ if tool_choice == "📅 あなただけのAI秘書":
                 audio_bytes = uploaded_file.getvalue(); transcript = transcribe_audio(audio_bytes, speech_api_key)
                 if transcript: prompt = transcript
                 else: st.warning("音声の認識に失敗しました。")
+    
     text_prompt = st.chat_input("または、キーボードで入力...", key="cal_text_input")
     if text_prompt: prompt = text_prompt
+    
     if prompt:
         if not gemini_api_key: st.error("サイドバーにGemini APIキーを入力してください。"); st.stop()
         st.session_state.cal_messages.append({"role": "user", "content": prompt})
@@ -225,7 +234,6 @@ elif tool_choice == "🚇 AI乗り換え案内":
                     st.success(f"AIによるルートシミュレーションが完了しました！")
                     for i, route in enumerate(routes):
                         with st.expander(f"**{route.get('route_name', 'ルート')}** - 約{route.get('summary', {}).get('total_time', '?')}分 / {route.get('summary', {}).get('total_fare', '?')}円 / 乗り換え{route.get('summary', {}).get('transfers', '?')}回", expanded=(i==0)):
-                            # 最後の駅名を取得しておく
                             last_station = end_station
                             if route.get('steps'):
                                 for step in route['steps']:
