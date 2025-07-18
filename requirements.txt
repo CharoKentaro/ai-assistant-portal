@@ -1,4 +1,5 @@
 streamlit
 google-generativeai
 pytz
-streamlit_speech_to_text
+google-cloud-speech
+streamlit-webrtc
