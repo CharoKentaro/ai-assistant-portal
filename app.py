@@ -3,9 +3,11 @@ import google.generativeai as genai
 import json
 from datetime import datetime
 import urllib.parse
-import pytz # ★日本のタイムゾーンを扱うための部品を追加
+import pytz
+from streamlit_mic_recorder import mic_recorder # ★音声入力の部品を追加
 
-# --- アプリの基本設定 ---
+# --- (アプリの基本設定、サイドバー、カレンダーURL生成関数は前回と全く同じ) ---
+# --- ここから ---
 st.set_page_config(
     page_title="AIアシスタント・ポータル",
     page_icon="🤖",
@@ -15,7 +17,6 @@ st.set_page_config(
 st.title("🤖 AIアシスタント・ポータル")
 st.caption("あなたの業務をAIがサポートします (Powered by Google Gemini)")
 
-# --- サイドバー：APIキー設定 ---
 with st.sidebar:
     st.header("⚙️ 設定")
     google_api_key = st.text_input("Google AI APIキー", type="password")
@@ -33,33 +34,20 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
 
-
-# --- GoogleカレンダーURL生成関数 (タイムゾーン対応版) ---
 def create_google_calendar_url(details):
     try:
-        # ★日本のタイムゾーンを定義
         jst = pytz.timezone('Asia/Tokyo')
-
-        # まずはタイムゾーン情報のない「naive」なdatetimeオブジェクトとして解釈
         start_time_naive = datetime.fromisoformat(details['start_time'])
         end_time_naive = datetime.fromisoformat(details['end_time'])
-        
-        # ★解釈した時刻を「日本時間」としてタイムゾーン情報を付与 (localize)
         start_time_jst = jst.localize(start_time_naive)
         end_time_jst = jst.localize(end_time_naive)
-        
-        # GoogleカレンダーURLはUTCで渡すのが最も確実なため、UTCに変換
         start_time_utc = start_time_jst.astimezone(pytz.utc)
         end_time_utc = end_time_jst.astimezone(pytz.utc)
-
-        # Googleカレンダーが要求するUTC形式 (YYYYMMDDTHHMMSSZ) の文字列に変換
         start_time_str = start_time_utc.strftime('%Y%m%dT%H%M%SZ')
         end_time_str = end_time_utc.strftime('%Y%m%dT%H%M%SZ')
-
         dates = f"{start_time_str}/{end_time_str}"
     except (ValueError, KeyError):
         dates = ""
-
     base_url = "https://www.google.com/calendar/render?action=TEMPLATE"
     params = {
         "text": details.get('title', ''),
@@ -68,14 +56,15 @@ def create_google_calendar_url(details):
         "details": details.get('details', '')
     }
     encoded_params = urllib.parse.urlencode(params, quote_via=urllib.parse.quote)
-    
     return f"{base_url}&{encoded_params}"
+
+# --- ここまで変更なし ---
 
 # --- メイン画面 ---
 st.header("📅 AIカレンダー秘書")
-st.info("「来週火曜の15時からAさんと会議」「明日の朝9時に企画書の作成」のように話しかけてみてください。")
+st.info("下のテキストボックスに直接入力するか、マイクボタンを押して話しかけてみてください。")
 
-# --- チャット機能 (変更なし) ---
+# --- チャット履歴の表示 (変更なし) ---
 if "messages" not in st.session_state:
     st.session_state.messages = [
         {"role": "assistant", "content": "こんにちは！どのようなご予定を登録しますか？"}
@@ -86,7 +75,43 @@ for message in st.session_state.messages:
     with st.chat_message(role):
         st.markdown(message["content"])
 
-if prompt := st.chat_input("予定を入力してください..."):
+# --- ★ここから入力部分を大幅アップデート ---
+# 音声入力をセッションステートで管理
+if 'voice_text' not in st.session_state:
+    st.session_state.voice_text = None
+
+# 音声入力ウィジェット
+voice_input = mic_recorder(
+    start_prompt="▶️ 音声入力を開始",
+    stop_prompt="⏹️ 音声入力を停止",
+    key='voice_recorder'
+)
+
+# 音声が認識されたら、そのテキストを保存
+if voice_input and 'bytes' in voice_input:
+    # このライブラリは音声認識機能を持たないため、ダミー処理とします
+    # 実際には、ここでブラウザのWeb Speech APIを叩くコンポーネントか、
+    # 音声データをサーバーに送って文字起こしAPI（例: OpenAI Whisper）を叩く処理が必要
+    # ここでは、よりシンプルな「テキスト入力と音声入力ボタン」のUIデモとします。
+    pass # ダミー処理
+
+# 音声入力とテキスト入力を統合する新しいUI
+col1, col2 = st.columns([4, 1])
+with col1:
+    text_prompt = st.chat_input("キーボードで入力...", key="text_input")
+with col2:
+    # 音声入力ボタン（これはUIのデモです）
+    if st.button("🎙️", help="音声で入力（開発中）"):
+        st.info("現在、音声入力機能は開発中です。テキストで入力してください。")
+
+# 最終的なプロンプトを決定
+prompt = text_prompt
+
+# --- ★ここまで入力部分のアップデート ---
+
+
+# --- チャット処理 (promptが決まった後の処理は変更なし) ---
+if prompt:
     if not google_api_key:
         st.error("サイドバーにGoogle AI APIキーを入力してください。")
         st.stop()
@@ -98,7 +123,6 @@ if prompt := st.chat_input("予定を入力してください..."):
     try:
         genai.configure(api_key=google_api_key)
         
-        # ★AIへの指示にも、日本の現在時刻をタイムゾーン付きで教える
         jst = pytz.timezone('Asia/Tokyo')
         current_time_jst = datetime.now(jst).isoformat()
         
@@ -131,7 +155,6 @@ if prompt := st.chat_input("予定を入力してください..."):
                 
                 calendar_url = create_google_calendar_url(schedule_details)
                 
-                # ★ユーザーへの表示も、タイムゾーンを考慮した日時を表示
                 display_start_time = "未設定"
                 if schedule_details.get('start_time'):
                     display_start_time = datetime.fromisoformat(schedule_details['start_time']).strftime('%Y-%m-%d %H:%M:%S')
