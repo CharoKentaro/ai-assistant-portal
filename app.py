@@ -16,12 +16,13 @@ try:
     CLIENT_ID = st.secrets["GOOGLE_CLIENT_ID"]
     CLIENT_SECRET = st.secrets["GOOGLE_CLIENT_SECRET"]
     REDIRECT_URI = st.secrets["REDIRECT_URI"]
-    # スコープにopenidを明示的に追加してGoogleの自動追加に対応
+    # Google Drive APIアクセスのためのスコープを追加
     SCOPE = [
         "openid",
         "https://www.googleapis.com/auth/userinfo.email", 
         "https://www.googleapis.com/auth/userinfo.profile",
-        "https://www.googleapis.com/auth/spreadsheets"
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive.readonly"  # ファイル一覧取得のために追加
     ]
 except (KeyError, FileNotFoundError):
     st.error("重大なエラー: StreamlitのSecretsにGoogle認証情報が設定されていません。")
@@ -196,16 +197,59 @@ else:
     if tool_choice == "🚙 交通費自動計算":
         st.success("ようこそ！ 認証システムは、ついに、正常に稼働しました。")
         st.info("このツールは現在、PoC（技術実証）段階です。")
+        
         try:
             creds = Credentials(**st.session_state["google_credentials"])
             gc = gspread.authorize(creds)
-            with st.spinner("Googleスプレッドシートへの接続をテスト中..."):
-                spreadsheet_list = gc.list_spreadsheet_files()
-                st.write("あなたがアクセス可能なスプレッドシート (最新5件):")
-                for s in spreadsheet_list[:5]:
-                    st.markdown(f"- [{s['name']}]({s.get('webViewLink', '#')})")
+            
+            # まずは基本的な接続テスト
+            with st.spinner("Google スプレッドシート API への接続をテスト中..."):
+                try:
+                    # より安全な方法でスプレッドシート一覧を取得
+                    spreadsheet_list = gc.list_spreadsheet_files()
+                    st.success(f"✅ 接続成功！ {len(spreadsheet_list)} 個のスプレッドシートにアクセス可能です。")
+                    
+                    if spreadsheet_list:
+                        st.write("**あなたがアクセス可能なスプレッドシート (最新5件):**")
+                        for i, spreadsheet in enumerate(spreadsheet_list[:5], 1):
+                            name = spreadsheet.get('name', '名前なし')
+                            web_link = spreadsheet.get('webViewLink', '#')
+                            st.markdown(f"{i}. [{name}]({web_link})")
+                    else:
+                        st.info("アクセス可能なスプレッドシートが見つかりませんでした。")
+                        
+                except Exception as api_error:
+                    if "insufficient authentication scopes" in str(api_error):
+                        st.error("🔐 **権限不足エラー**")
+                        st.warning("Google Drive へのアクセス権限が不足しています。")
+                        st.info("**解決方法:** 一度ログアウトして、再度ログインしてください。新しい権限が追加されます。")
+                        
+                        # スコープの詳細情報を表示
+                        current_scopes = st.session_state["google_credentials"].get("scopes", [])
+                        st.write("**現在の権限:**")
+                        for scope in current_scopes:
+                            st.write(f"- {scope}")
+                        
+                        st.write("**必要な権限:**")
+                        st.write("- Google Drive の読み取りアクセス")
+                        
+                        if st.button("🔄 再認証する", type="primary"):
+                            google_logout()
+                    else:
+                        raise api_error
+                        
         except Exception as e:
             st.error(f"ツールの実行中にエラーが発生しました: {e}")
             st.code(traceback.format_exc())
+            
+            # エラー解決のためのガイダンス
+            with st.expander("🔧 トラブルシューティング"):
+                st.write("**よくある解決方法:**")
+                st.write("1. **再認証**: ログアウトして再度ログインする")
+                st.write("2. **権限の確認**: Google アカウントの「アプリとサイト」で権限を確認")
+                st.write("3. **キャッシュクリア**: ブラウザのキャッシュとCookieをクリア")
+                
+                if st.button("🔄 強制再認証", key="force_reauth"):
+                    google_logout()
     else:
         st.warning(f"ツール「{tool_choice}」は現在、新しい認証システムへの移行作業中です。")
