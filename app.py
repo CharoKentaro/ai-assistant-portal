@@ -22,10 +22,9 @@ except (KeyError, FileNotFoundError):
     st.stop()
 
 # ===============================================================
-# 2. ログイン/ログアウト関数の定義（賢者の遺産バージョン）
+# 2. ログイン/ログアウト関数
 # ===============================================================
 def get_google_auth_flow():
-    """Google認証のフローを生成する、ただ一つの、関数"""
     return Flow.from_client_config(
         client_config={ "web": { "client_id": CLIENT_ID, "client_secret": CLIENT_SECRET,
                                  "auth_uri": "https://accounts.google.com/o/oauth2/auth", "token_uri": "https://oauth2.googleapis.com/token",
@@ -35,57 +34,41 @@ def get_google_auth_flow():
     )
 
 def google_logout():
-    """ログアウト処理関数"""
     keys_to_clear = ["google_credentials", "google_user_info", "google_auth_state"]
     for key in keys_to_clear:
         st.session_state.pop(key, None)
     st.success("ログアウトしました。")
+    # ログアウト時のみ、rerunでページを確実に初期化する
     st.rerun()
 
 # ===============================================================
-# 3. 認証処理の核心部（自然なコードフロー）
+# 3. 認証処理の核心部（静かなる凱旋バージョン）
 # ===============================================================
-# --- Googleからの帰還者（URLにcodeがある者）がいるか、チェックする ---
-if "code" in st.query_params and "state" in st.query_params:
-    # 帰還者が、セッションに保存された合言葉を持っているか、チェックする
-    # この時点で、まだログイン情報はセッションにないはず
-    if "google_credentials" not in st.session_state:
-        if st.session_state.get("google_auth_state") == st.query_params["state"]:
-            try:
-                flow = get_google_auth_flow()
-                # 通行許可証(code)を、正式な身分証明書(token)に交換
-                flow.fetch_token(code=st.query_params["code"])
-                creds = flow.credentials
-
-                # 航海日誌（session_state）に、身分情報を記録
-                st.session_state["google_credentials"] = {
-                    "token": creds.token, "refresh_token": creds.refresh_token, "token_uri": creds.token_uri,
-                    "client_id": creds.client_id, "client_secret": creds.client_secret, "scopes": creds.scopes,
-                }
-
-                # ユーザー情報を取得して記録
-                user_info_response = requests.get(
-                    "https://www.googleapis.com/oauth2/v1/userinfo",
-                    headers={"Authorization": f"Bearer {creds.token}"},
-                )
-                if user_info_response.status_code == 200:
-                    st.session_state["google_user_info"] = user_info_response.json()
-                else:
-                    st.warning("ユーザー情報の取得に失敗しました。")
-
-                # URLを綺麗にして、ページをリフレッシュ！
-                st.query_params.clear()
-                st.rerun()
-
-            except Exception as e:
-                st.error("Google認証中に、予期せぬエラーが発生しました。")
-                st.session_state['last_error'] = traceback.format_exc()
-                st.code(st.session_state['last_error'])
-        else:
-            st.error("認証セッションが無効です。もう一度お試しください。")
-            time.sleep(2)
+# --- Googleからの帰還者がいるか、チェックする ---
+if "code" in st.query_params and "google_credentials" not in st.session_state:
+    if st.session_state.get("google_auth_state") == st.query_params["state"]:
+        try:
+            flow = get_google_auth_flow()
+            flow.fetch_token(code=st.query_params["code"])
+            creds = flow.credentials
+            st.session_state["google_credentials"] = {
+                "token": creds.token, "refresh_token": creds.refresh_token, "token_uri": creds.token_uri,
+                "client_id": creds.client_id, "client_secret": creds.client_secret, "scopes": creds.scopes,
+            }
+            user_info_response = requests.get(
+                "https://www.googleapis.com/oauth2/v1/userinfo",
+                headers={"Authorization": f"Bearer {creds.token}"},
+            )
+            if user_info_response.status_code == 200:
+                st.session_state["google_user_info"] = user_info_response.json()
+            
+            # URLを綺麗にする（rerunはしない！）
             st.query_params.clear()
-            st.rerun()
+            # このブロックの実行が終わると、Streamlitが自動でUIを再描画する
+
+        except Exception as e:
+            st.error("Google認証中にエラーが発生しました。")
+            st.code(traceback.format_exc())
 
 # ===============================================================
 # 4. UI描画
@@ -96,7 +79,6 @@ with st.sidebar:
         st.info("各ツールを利用するには、Googleアカウントでのログインが必要です。")
         flow = get_google_auth_flow()
         authorization_url, state = flow.authorization_url(prompt="consent", access_type="offline")
-        # 合言葉を、セッションに、記録する
         st.session_state["google_auth_state"] = state
         st.link_button("🗝️ Googleアカウントでログイン", authorization_url, use_container_width=True)
     else:
@@ -114,14 +96,7 @@ else:
     tool_options = ("🚙 交通費自動計算", "📅 カレンダー登録", "💹 価格リサーチ", "📝 議事録作成", "🚇 AI乗り換え案内")
     with st.sidebar:
         tool_choice = st.radio("使いたいツールを選んでください:", tool_options, disabled=False)
-        st.divider()
-        if st.toggle("開発者モード", key="dev_mode", value=False):
-            st.header("🗺️ 宝の地図")
-            st.write("🪪 現在のセッション情報:", st.session_state)
-            if "last_error" in st.session_state:
-                with st.expander("直近のエラーログ", expanded=True):
-                    st.code(st.session_state["last_error"])
-
+    
     if tool_choice == "🚙 交通費自動計算":
         st.header("🚙 交通費自動計算ツール")
         st.success("ようこそ！ 認証システムは、ついに、正常に稼働しました。")
