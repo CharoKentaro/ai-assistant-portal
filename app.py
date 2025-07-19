@@ -1,4 +1,4 @@
-# (変更点は1箇所のみですが、私たちの原則に従い、完全なコードを提供します)
+# (変更点はごく僅かですが、私たちの神聖なルールに従い、完全なコードを提供します)
 import streamlit as st
 import google.generativeai as genai
 from google.cloud import speech
@@ -8,9 +8,7 @@ from datetime import datetime
 import urllib.parse
 import pytz
 import pandas as pd
-# from streamlit_local_storage import LocalStorage
 
-# --- 新しい仲間たちのインポート ---
 from google_auth_oauthlib.flow import Flow
 from google.oauth2.credentials import Credentials
 import gspread
@@ -18,7 +16,7 @@ import requests
 import traceback
 
 # ===============================================================
-# 1. アプリの基本設定と、神聖なる金庫からの情報取得
+# 1. アプリの基本設定
 # ===============================================================
 
 st.set_page_config(page_title="AIアシスタント・ポータル", page_icon="🤖", layout="wide")
@@ -37,7 +35,7 @@ except (KeyError, FileNotFoundError):
     st.stop()
 
 # ===============================================================
-# 2. 『金庫番（トークンマネージャー）』と『セッション・ブリッジ』
+# 2. 『金庫番』と『セッション・ブリッジ』
 # ===============================================================
 
 def get_google_auth_flow():
@@ -55,14 +53,16 @@ def get_google_auth_flow():
         redirect_uri=REDIRECT_URI,
     )
 
-def google_login():
+# ★★★ ここが、作戦の核心です！ ★★★
+# 自動リダイレクトではなく、クリック可能な「魔法のリンク」を生成する方式に変更しました。
+def generate_login_url():
+    """Googleログイン用のURLを生成する関数"""
     flow = get_google_auth_flow()
     authorization_url, state = flow.authorization_url(
         access_type="offline", prompt="consent"
     )
     st.session_state["google_auth_state"] = state
-    st.markdown(f'<meta http-equiv="refresh" content="0; url={authorization_url}">', unsafe_allow_html=True)
-    st.rerun()
+    return authorization_url
 
 def google_logout():
     keys_to_clear = ["google_credentials", "google_auth_state", "google_user_info"]
@@ -72,6 +72,7 @@ def google_logout():
     st.success("ログアウトしました。")
     st.rerun()
 
+# --- Google認証からのコールバック処理（変更なし） ---
 try:
     if "code" in st.query_params and "state" in st.query_params:
         if "google_auth_state" in st.session_state and st.session_state["google_auth_state"] == st.query_params["state"]:
@@ -109,8 +110,10 @@ with st.sidebar:
 
     if "google_credentials" not in st.session_state:
         st.info("各ツールを利用するには、Googleアカウントでのログインが必要です。")
-        if st.button("🗝️ Googleアカウントでログイン", use_container_width=True):
-            google_login()
+        # ★★★ ここも、作戦の核心です！ ★★★
+        # 通常のボタンではなく、st.link_button を使って「魔法のリンク」を設置します。
+        login_url = generate_login_url()
+        st.link_button("🗝️ Googleアカウントでログイン", login_url, use_container_width=True)
     else:
         user_info = st.session_state.get("google_user_info", {})
         st.success(f"✅ ログイン中")
@@ -157,7 +160,6 @@ with st.sidebar:
 # ===============================================================
 
 if "google_credentials" not in st.session_state:
-    # ★★★ ここが、修正箇所です！ ★★★
     st.image("https://storage.googleapis.com/gemini-prod/images/41b18482-de0a-42b7-a868-23e3f3115456.gif", use_container_width=True)
     st.info("👆 サイドバーにある「🗝️ Googleアカウントでログイン」ボタンを押して、旅を始めましょう！")
     st.stop()
