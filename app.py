@@ -15,21 +15,20 @@ st.set_page_config(page_title="AIアシスタント・ポータル", page_icon="
 localS = LocalStorage()
 
 # ===============================================================
-# 2. 認証処理の核心部（魂のパスポート作戦）
+# 2. 認証処理の核心部（あなたのチェックポイントを反映）
 # ===============================================================
 try:
     if "code" in st.query_params:
-        time.sleep(0.3) # 念のため、聖なる間を少しだけ延長
+        time.sleep(0.3)
         saved_state = localS.getItem("google_auth_state")
         returned_state = st.query_params.get("state")
 
         if saved_state and saved_state == returned_state:
             localS.removeItem("google_auth_state")
             flow = Flow.from_client_config(
-                client_config={
-                    "web": { "client_id": st.secrets["GOOGLE_CLIENT_ID"], "client_secret": st.secrets["GOOGLE_CLIENT_SECRET"],
-                             "auth_uri": "https://accounts.google.com/o/oauth2/auth", "token_uri": "https://oauth2.googleapis.com/token",
-                             "redirect_uris": [st.secrets["REDIRECT_URI"]], }},
+                client_config={ "web": { "client_id": st.secrets["GOOGLE_CLIENT_ID"], "client_secret": st.secrets["GOOGLE_CLIENT_SECRET"],
+                                         "auth_uri": "https://accounts.google.com/o/oauth2/auth", "token_uri": "https://oauth2.googleapis.com/token",
+                                         "redirect_uris": [st.secrets["REDIRECT_URI"]], }},
                 scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/userinfo.email", "https://www.googleapis.com/auth/userinfo.profile"],
                 redirect_uri=st.secrets["REDIRECT_URI"],
             )
@@ -46,23 +45,26 @@ try:
             )
             if user_info_response.status_code == 200:
                 st.session_state["google_user_info"] = user_info_response.json()
-            
-            # 認証情報の記録が完了した後、URLをクリーンにして、UIを再描画する
-            st.query_params.clear()
+
+            # ✅ チェックポイント2：rerun と clear の順序を修正
             st.rerun()
+            st.query_params.clear()
+
 except Exception as e:
-    st.error("Google認証中にエラーが発生しました。")
+    # ✅ チェックポイント5：詳細なエラーログを出力
+    st.error("Google認証中に、予期せぬエラーが発生しました。")
     st.session_state['last_error'] = traceback.format_exc()
+    st.code(st.session_state['last_error'])
+
 
 # ===============================================================
 # 3. ログイン/ログアウト関数
 # ===============================================================
 def generate_login_url():
     flow = Flow.from_client_config(
-        client_config={
-            "web": { "client_id": st.secrets["GOOGLE_CLIENT_ID"], "client_secret": st.secrets["GOOGLE_CLIENT_SECRET"],
-                     "auth_uri": "https://accounts.google.com/o/oauth2/auth", "token_uri": "https://oauth2.googleapis.com/token",
-                     "redirect_uris": [st.secrets["REDIRECT_URI"]], }},
+        client_config={ "web": { "client_id": st.secrets["GOOGLE_CLIENT_ID"], "client_secret": st.secrets["GOOGLE_CLIENT_SECRET"],
+                                 "auth_uri": "https://accounts.google.com/o/oauth2/auth", "token_uri": "https://oauth2.googleapis.com/token",
+                                 "redirect_uris": [st.secrets["REDIRECT_URI"]], }},
         scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/userinfo.email", "https://www.googleapis.com/auth/userinfo.profile"],
         redirect_uri=st.secrets["REDIRECT_URI"],
     )
@@ -82,7 +84,8 @@ def google_logout():
 # ===============================================================
 with st.sidebar:
     st.title("🤖 AIアシスタント・ポータル")
-    if "google_credentials" not in st.session_state:
+    # ✅ チェックポイント5：より厳格なログイン判定
+    if "google_user_info" not in st.session_state:
         st.info("各ツールを利用するには、Googleアカウントでのログインが必要です。")
         login_url = generate_login_url()
         st.link_button("🗝️ Googleアカウントでログイン", login_url, use_container_width=True)
@@ -94,16 +97,21 @@ with st.sidebar:
         if st.button("🔑 ログアウト", use_container_width=True): google_logout()
     st.divider()
 
-if "google_credentials" not in st.session_state:
+if "google_user_info" not in st.session_state:
     st.info("👆 サイドバーにある「🗝️ Googleアカウントでログイン」ボタンを押して、旅を始めましょう！")
 else:
     tool_options = ("🚙 交通費自動計算", "📅 カレンダー登録", "💹 価格リサーチ", "📝 議事録作成", "🚇 AI乗り換え案内")
     with st.sidebar:
         tool_choice = st.radio("使いたいツールを選んでください:", tool_options, disabled=False)
         st.divider()
-        if st.toggle("開発者モード", key="dev_mode", value=False):
+        if st.toggle("開発者モード", key="dev_mode", value=True): # デフォルトでONにする
             st.header("🗺️ 宝の地図")
-            st.json({k: str(v) for k, v in st.session_state.items()})
+            # ✅ チェックポイント1：セッション情報を常に表示
+            st.write("🪪 現在のセッション情報:", st.session_state)
+            if "last_error" in st.session_state:
+                with st.expander("直近のエラーログ", expanded=True):
+                    st.code(st.session_state["last_error"])
+
 
     if tool_choice == "🚙 交通費自動計算":
         st.header("🚙 交通費自動計算ツール")
@@ -119,5 +127,6 @@ else:
         except Exception as e:
             st.error(f"ツールの実行中にエラーが発生しました: {e}")
             st.session_state['last_error'] = traceback.format_exc()
+            st.code(st.session_state['last_error'])
     else:
         st.warning(f"ツール「{tool_choice}」は現在、新しい認証システムへの移行作業中です。")
