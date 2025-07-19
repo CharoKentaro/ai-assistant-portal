@@ -1,6 +1,10 @@
-streamlit
+streamlit>=1.30.0
 google-generativeai
 pytz
 google-cloud-speech
 pandas
 streamlit-local-storage
+gspread>=5.12.0
+google-auth-oauthlib>=1.0.0
+google-api-python-client>=2.88.0
+google-auth-httplib2>=0.1.0
