@@ -5,31 +5,25 @@ from google.oauth2.credentials import Credentials
 import gspread
 import requests
 import traceback
-from streamlit_local_storage import LocalStorage # 最後の希望
-import time # 時間を司る神
+from streamlit_local_storage import LocalStorage
+import time
 
 # ===============================================================
 # 1. アプリの基本設定
 # ===============================================================
 st.set_page_config(page_title="AIアシスタント・ポータル", page_icon="🤖", layout="wide")
-localS = LocalStorage() # 魂のパスポートを発行する機関
+localS = LocalStorage()
 
 # ===============================================================
-# 2. ★★★ 作戦『聖なる間』の核心部 ★★★
+# 2. 認証処理の核心部（魂のパスポート作戦）
 # ===============================================================
 try:
-    # Googleからの帰還者（URLにcodeがある者）がいるか？
     if "code" in st.query_params:
-        # ★★★ ここに、0.2秒の、聖なる間を設ける ★★★
         time.sleep(0.2)
-
-        # パスポート（localStorage）に、合言葉の記録はあるか？
         saved_state = localS.getItem("google_auth_state")
         returned_state = st.query_params.get("state")
-
         if saved_state and saved_state == returned_state:
             localS.removeItem("google_auth_state")
-
             flow = Flow.from_client_config(
                 client_config={
                     "web": { "client_id": st.secrets["GOOGLE_CLIENT_ID"], "client_secret": st.secrets["GOOGLE_CLIENT_SECRET"],
@@ -40,7 +34,6 @@ try:
             )
             flow.fetch_token(code=st.query_params["code"])
             creds = flow.credentials
-
             st.session_state["google_credentials"] = {
                 "token": creds.token, "refresh_token": creds.refresh_token, "token_uri": creds.token_uri,
                 "client_id": creds.client_id, "client_secret": creds.client_secret, "scopes": creds.scopes,
@@ -52,20 +45,16 @@ try:
             if user_info_response.status_code == 200:
                 st.session_state["google_user_info"] = user_info_response.json()
 
+            # ★★★ あなたのアイデアを、ここに、実装します ★★★
+            st.session_state['auth_success'] = True # 認証成功のフラグを立てる
             st.query_params.clear()
-            st.rerun()
-        else:
-            st.error("認証セッションが無効、または、タイムアウトしました。お手数ですが、もう一度ログインしてください。")
-            st.session_state['last_error'] = f"State mismatch or not found. Saved: {saved_state}, Returned: {returned_state}"
-
-
+            st.rerun() # UIを再描画するために、安全なリフレッシュを行う
 except Exception as e:
-    # 宝の地図に、より詳細なエラー情報を記録する
-    st.error("Google認証中に、予期せぬエラーが発生しました。開発者モードで詳細を確認してください。")
+    st.error("Google認証中にエラーが発生しました。")
     st.session_state['last_error'] = traceback.format_exc()
 
 # ===============================================================
-# 3. ログイン/ログアウト関数 (変更なし)
+# 3. ログイン/ログアウト関数
 # ===============================================================
 def generate_login_url():
     flow = Flow.from_client_config(
@@ -81,14 +70,14 @@ def generate_login_url():
     return authorization_url
 
 def google_logout():
-    keys_to_clear = ["google_credentials", "google_auth_state", "google_user_info"]
+    keys_to_clear = ["google_credentials", "google_auth_state", "google_user_info", "auth_success"]
     for key in keys_to_clear:
         st.session_state.pop(key, None)
     st.success("ログアウトしました。")
     st.rerun()
 
 # ===============================================================
-# 4. UI描画 (宝の地図を強化)
+# 4. サイドバー UI（常に表示される）
 # ===============================================================
 with st.sidebar:
     st.title("🤖 AIアシスタント・ポータル")
@@ -97,6 +86,7 @@ with st.sidebar:
         login_url = generate_login_url()
         st.link_button("🗝️ Googleアカウントでログイン", login_url, use_container_width=True)
     else:
+        # このブロックが、認証直後にも、正しく、実行される！
         st.success("✅ ログイン中")
         user_info = st.session_state.get("google_user_info", {})
         if 'name' in user_info: st.markdown(f"**ユーザー:** {user_info['name']}")
@@ -104,9 +94,23 @@ with st.sidebar:
         if st.button("🔑 ログアウト", use_container_width=True): google_logout()
     st.divider()
 
-if "google_credentials" not in st.session_state:
-    st.image("https://storage.googleapis.com/gemini-prod/images/41b18482-de0a-42b7-a868-23e3f3115456.gif", use_container_width=True)
+# ===============================================================
+# 5. メインコンテンツの表示制御（賢者のUI制御）
+# ===============================================================
+# 認証成功直後か？
+if st.session_state.get('auth_success', False):
+    st.success("🎉 認証に成功しました！")
+    if st.button("🚀 ポータルを開始する", use_container_width=True, type="primary"):
+        st.session_state.pop('auth_success', None)
+        st.rerun()
+# まだログインしていないか？
+elif "google_credentials" not in st.session_state:
+    try:
+        st.image("welcome.gif", use_container_width=True)
+    except Exception as img_e:
+        st.warning(f"ウェルカム画像の読み込みに失敗しました: {img_e}")
     st.info("👆 サイドバーにある「🗝️ Googleアカウントでログイン」ボタンを押して、旅を始めましょう！")
+# ログイン済みか？
 else:
     is_logged_in = True
     tool_options = ("🚙 交通費自動計算", "📅 カレンダー登録", "💹 価格リサーチ", "📝 議事録作成", "🚇 AI乗り換え案内")
@@ -115,10 +119,7 @@ else:
         st.divider()
         if st.toggle("開発者モード", key="dev_mode", value=False):
             st.header("🗺️ 宝の地図")
-            with st.expander("セッション情報", expanded=False):
-                st.json({k: str(v) for k, v in st.session_state.items()})
-            with st.expander("直近のエラーログ", expanded=True): # デフォルトで開く
-                st.text(st.session_state.get('last_error', 'エラーは記録されていません。'))
+            st.json({k: str(v) for k, v in st.session_state.items()})
 
     if tool_choice == "🚙 交通費自動計算":
         st.header("🚙 交通費自動計算ツール")
