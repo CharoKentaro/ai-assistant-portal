@@ -20,6 +20,7 @@ try:
     CLIENT_ID = st.secrets["GOOGLE_CLIENT_ID"]
     CLIENT_SECRET = st.secrets["GOOGLE_CLIENT_SECRET"]
     REDIRECT_URI = st.secrets["REDIRECT_URI"]
+    # エラーメッセージに合わせてキー名を "Maps_API_KEY" に修正
     MAPS_API_KEY = st.secrets["Maps_API_KEY"] # Google Maps APIキーもSecretsから取得
     
     SCOPE = [
@@ -31,6 +32,7 @@ try:
     ]
 except KeyError as e:
     st.error(f"重大なエラー: StreamlitのSecretsに必須の情報が設定されていません。不足: {e}")
+    # エラーメッセージのガイダンスも "Maps_API_KEY" に修正
     st.info("以下のキーがSecretsに設定されていることを確認してください: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `REDIRECT_URI`, `Maps_API_KEY`")
     st.stop()
 
