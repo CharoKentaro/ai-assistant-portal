@@ -60,29 +60,6 @@ except Exception as e:
     st.error("Google認証中に、予期せぬエラーが発生しました。")
     st.session_state['last_error'] = traceback.format_exc()
 
-# --- もし認証成功直後なら、賢者のクリックを促す画面を表示 ---
-if st.session_state.get('auth_success', False):
-    # メインエリアに成功メッセージを表示（サイドバーは正常動作）
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        st.success("🎉 認証に成功しました！")
-        st.markdown("### ようこそ、AIアシスタント・ポータルへ！")
-        
-        # ウェルカム表示（画像なし版）
-        st.markdown("""
-        <div style="text-align: center; padding: 1rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; color: white; margin: 1rem 0;">
-            <h2 style="color: white; margin: 0;">🚀 準備完了！</h2>
-            <p style="margin: 0.5rem 0; color: white;">あなたの AIアシスタント が待機中です</p>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        if st.button("🚀 ポータルを開始", use_container_width=True, type="primary"):
-            st.session_state.pop('auth_success', None)
-            st.rerun()
-        
-        st.markdown("---")
-        st.info("👆 上のボタンをクリックして、ツールの利用を開始してください")
-
 # ===============================================================
 # 3. ログイン/ログアウト関数の定義
 # ===============================================================
@@ -103,23 +80,26 @@ def generate_login_url():
     return authorization_url
 
 def google_logout():
-    keys_to_clear = ["google_credentials", "google_auth_state", "google_user_info"]
+    keys_to_clear = ["google_credentials", "google_auth_state", "google_user_info", "auth_success"]
     for key in keys_to_clear:
         st.session_state.pop(key, None)
     st.success("ログアウトしました。")
     st.rerun()
 
 # ===============================================================
-# 4. サイドバー UI
+# 4. サイドバー UI（認証状態に関わらず常に表示）
 # ===============================================================
 with st.sidebar:
     st.title("🤖 AIアシスタント・ポータル")
+    
+    # ★★★ 重要：google_credentialsがあるかどうかで判定（auth_successは関係なし）★★★
     if "google_credentials" not in st.session_state:
         st.info("各ツールを利用するには、Googleアカウントでのログインが必要です。")
         login_url = generate_login_url()
         st.link_button("🗝️ Googleアカウントでログイン", login_url, use_container_width=True)
     else:
-        st.success(f"✅ ログイン中")
+        # ログイン済みの場合は必ず「ログイン中」を表示
+        st.success("✅ ログイン中")
         user_info = st.session_state.get("google_user_info", {})
         if 'name' in user_info:
             st.markdown(f"**ユーザー:** {user_info['name']}")
@@ -142,10 +122,29 @@ with st.sidebar:
 # 5. メインコンテンツ
 # ===============================================================
 
-# 認証成功直後の場合は、上で既に表示済み
+# --- もし認証成功直後なら、賢者のクリックを促す画面を表示 ---
 if st.session_state.get('auth_success', False):
-    # 既に上で処理済みなので、ここでは何もしない
-    pass
+    # メインエリアに成功メッセージを表示
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.success("🎉 認証に成功しました！")
+        st.markdown("### ようこそ、AIアシスタント・ポータルへ！")
+        
+        # ウェルカム表示（画像なし版）
+        st.markdown("""
+        <div style="text-align: center; padding: 1rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; color: white; margin: 1rem 0;">
+            <h2 style="color: white; margin: 0;">🚀 準備完了！</h2>
+            <p style="margin: 0.5rem 0; color: white;">あなたの AIアシスタント が待機中です</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        if st.button("🚀 ポータルを開始", use_container_width=True, type="primary"):
+            st.session_state.pop('auth_success', None)  # このフラグを削除
+            st.rerun()
+        
+        st.markdown("---")
+        st.info("👆 上のボタンをクリックして、ツールの利用を開始してください")
+
 elif "google_credentials" not in st.session_state:
     # ログインしていない場合のウェルカム画面（画像なし版）
     st.markdown("""
@@ -160,8 +159,9 @@ elif "google_credentials" not in st.session_state:
     """, unsafe_allow_html=True)
     
     st.info("👆 サイドバーにある「🗝️ Googleアカウントでログイン」ボタンを押して、旅を始めましょう！")
+
 else:
-    # 通常のツール選択画面（ログイン済み）
+    # 通常のツール選択画面（ログイン済み & auth_successフラグなし）
     if tool_choice == "🚙 交通費自動計算":
         st.header("🚙 交通費自動計算ツール")
         st.success("ようこそ！ 認証システムは正常に稼働しています。")
