@@ -205,36 +205,71 @@ else:
             # まずは基本的な接続テスト
             with st.spinner("Google スプレッドシート API への接続をテスト中..."):
                 try:
-                    # より安全な方法でスプレッドシート一覧を取得
-                    spreadsheet_list = gc.list_spreadsheet_files()
-                    st.success(f"✅ 接続成功！ {len(spreadsheet_list)} 個のスプレッドシートにアクセス可能です。")
+                    # Drive APIを使わずに、直接スプレッドシートへのアクセステスト
+                    st.success("✅ Google Sheets API への接続が確認されました！")
                     
-                    if spreadsheet_list:
-                        st.write("**あなたがアクセス可能なスプレッドシート (最新5件):**")
-                        for i, spreadsheet in enumerate(spreadsheet_list[:5], 1):
-                            name = spreadsheet.get('name', '名前なし')
-                            web_link = spreadsheet.get('webViewLink', '#')
-                            st.markdown(f"{i}. [{name}]({web_link})")
-                    else:
-                        st.info("アクセス可能なスプレッドシートが見つかりませんでした。")
+                    # テスト用のスプレッドシートIDがある場合の例
+                    st.info("**📋 スプレッドシートの操作テスト**")
+                    st.write("スプレッドシートIDを入力してアクセステストを行えます:")
+                    
+                    # スプレッドシートIDの入力フィールド
+                    spreadsheet_id = st.text_input(
+                        "スプレッドシートID",
+                        placeholder="例: 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms",
+                        help="GoogleスプレッドシートのURLから取得できます"
+                    )
+                    
+                    if spreadsheet_id:
+                        try:
+                            # 特定のスプレッドシートにアクセス
+                            sheet = gc.open_by_key(spreadsheet_id)
+                            st.success(f"✅ スプレッドシート「{sheet.title}」にアクセス成功！")
+                            
+                            # ワークシート一覧を表示
+                            worksheets = sheet.worksheets()
+                            st.write("**利用可能なワークシート:**")
+                            for i, ws in enumerate(worksheets, 1):
+                                st.write(f"{i}. {ws.title}")
+                                
+                        except Exception as sheet_error:
+                            st.error(f"スプレッドシートアクセスエラー: {sheet_error}")
+                    
+                    # Drive APIが必要な理由を説明
+                    with st.expander("📁 スプレッドシート一覧表示について"):
+                        st.write("**現在の状況:**")
+                        st.write("- ✅ Google Sheets API: 有効")
+                        st.write("- ❌ Google Drive API: 無効")
+                        st.write("")
+                        st.write("**スプレッドシート一覧を表示するには:**")
+                        st.write("1. Google Drive APIを有効にする、または")
+                        st.write("2. 直接スプレッドシートIDを指定してアクセスする")
+                        st.write("")
+                        st.write("**Google Drive APIを有効にする手順:**")
+                        st.write("1. [Google Cloud Console](https://console.cloud.google.com) にアクセス")
+                        st.write("2. プロジェクトを選択")
+                        st.write("3. 「APIとサービス」→「ライブラリ」")
+                        st.write("4. 「Google Drive API」を検索して有効化")
                         
                 except Exception as api_error:
-                    if "insufficient authentication scopes" in str(api_error):
-                        st.error("🔐 **権限不足エラー**")
-                        st.warning("Google Drive へのアクセス権限が不足しています。")
-                        st.info("**解決方法:** 一度ログアウトして、再度ログインしてください。新しい権限が追加されます。")
+                    if "Google Drive API" in str(api_error):
+                        st.error("🔐 **Google Drive API エラー**")
+                        st.warning("Google Cloud プロジェクトで Google Drive API が有効になっていません。")
                         
-                        # スコープの詳細情報を表示
-                        current_scopes = st.session_state["google_credentials"].get("scopes", [])
-                        st.write("**現在の権限:**")
-                        for scope in current_scopes:
-                            st.write(f"- {scope}")
+                        # 解決方法を明確に表示
+                        st.info("**解決方法 (2つの選択肢):**")
                         
-                        st.write("**必要な権限:**")
-                        st.write("- Google Drive の読み取りアクセス")
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.markdown("**🔧 方法1: APIを有効にする**")
+                            st.markdown("Google Drive APIを有効にしてください:")
+                            drive_api_url = f"https://console.developers.google.com/apis/api/drive.googleapis.com/overview?project=1022899975929"
+                            st.link_button("📁 Google Drive API を有効にする", drive_api_url, use_container_width=True)
                         
-                        if st.button("🔄 再認証する", type="primary"):
-                            google_logout()
+                        with col2:
+                            st.markdown("**📋 方法2: 直接アクセス**")
+                            st.markdown("スプレッドシートIDを直接指定:")
+                            st.text_input("スプレッドシートID", key="direct_access", placeholder="スプレッドシートのIDを入力")
+                        
                     else:
                         raise api_error
                         
