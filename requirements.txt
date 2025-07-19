@@ -1,9 +1,10 @@
-streamlit>=1.30.0
-google-generativeai
-pytz
-google-cloud-speech
+streamlit>=1.33.0
+google-api-python-client
+google-auth-oauthlib
+google-auth-httplib2
+gspread
+requests
+urllib3
 pandas
-gspread>=5.12.0
-google-auth-oauthlib>=1.0.0
-google-api-python-client>=2.88.0
-google-auth-httplib2>=0.1.0
+pytz
+streamlit-local-storage # 私たちの最後の希望
