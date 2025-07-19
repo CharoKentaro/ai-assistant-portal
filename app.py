@@ -41,40 +41,58 @@ def google_logout():
     st.rerun()
 
 # ===============================================================
-# 3. 認証処理の核心部（確実なる戴冠式バージョン）
+# 3. 認証処理の核心部（修正版）
 # ===============================================================
+# 認証処理を最初に実行（UIが描画される前）
 if "code" in st.query_params and "google_credentials" not in st.session_state:
-    if st.session_state.get("google_auth_state") == st.query_params["state"]:
+    # stateの確認
+    if st.session_state.get("google_auth_state") == st.query_params.get("state"):
         try:
-            with st.spinner("Googleと認証情報を交換し、戴冠式を準備中です..."):
-                flow = get_google_auth_flow()
-                flow.fetch_token(code=st.query_params["code"])
-                creds = flow.credentials
-                st.session_state["google_credentials"] = {
-                    "token": creds.token, "refresh_token": creds.refresh_token, "token_uri": creds.token_uri,
-                    "client_id": creds.client_id, "client_secret": creds.client_secret, "scopes": creds.scopes,
-                }
-                user_info_response = requests.get(
-                    "https://www.googleapis.com/oauth2/v1/userinfo",
-                    headers={"Authorization": f"Bearer {creds.token}"},
-                )
-                user_info_response.raise_for_status()
-                st.session_state["google_user_info"] = user_info_response.json()
+            # 認証コードを使ってトークンを取得
+            flow = get_google_auth_flow()
+            flow.fetch_token(code=st.query_params["code"])
+            creds = flow.credentials
             
-            # ▼▼▼【最重要・変更点】これぞ、最後の、そして、確実なる一手！ ▼▼▼
+            # セッション状態に認証情報を保存
+            st.session_state["google_credentials"] = {
+                "token": creds.token, 
+                "refresh_token": creds.refresh_token, 
+                "token_uri": creds.token_uri,
+                "client_id": creds.client_id, 
+                "client_secret": creds.client_secret, 
+                "scopes": creds.scopes,
+            }
+            
+            # ユーザー情報を取得
+            user_info_response = requests.get(
+                "https://www.googleapis.com/oauth2/v1/userinfo",
+                headers={"Authorization": f"Bearer {creds.token}"},
+            )
+            user_info_response.raise_for_status()
+            st.session_state["google_user_info"] = user_info_response.json()
+            
+            # URLパラメータをクリアしてリダイレクト
             st.query_params.clear()
-            st.rerun() 
-            # ▲▲▲ 変更点は、この一行の追加のみ ▲▲▲
-
+            st.success("認証が完了しました！")
+            time.sleep(1)  # 短時間待機してセッション状態の保存を確実にする
+            st.rerun()
+            
         except Exception as e:
-            st.error("Google認証中にエラーが発生しました。")
+            st.error(f"Google認証中にエラーが発生しました: {str(e)}")
             st.code(traceback.format_exc())
+            # エラー時もパラメータをクリア
+            st.query_params.clear()
+    else:
+        st.error("認証状態が不正です。再度ログインしてください。")
+        st.query_params.clear()
 
 # ===============================================================
 # 4. UI描画
 # ===============================================================
 with st.sidebar:
     st.title("🤖 AIアシスタント・ポータル")
+    
+    # ログイン状態の確認と表示
     if "google_user_info" not in st.session_state:
         st.info("各ツールを利用するには、Googleアカウントでのログインが必要です。")
         flow = get_google_auth_flow()
@@ -84,9 +102,13 @@ with st.sidebar:
     else:
         st.success("✅ ログイン中")
         user_info = st.session_state.get("google_user_info", {})
-        if 'name' in user_info: st.markdown(f"**ユーザー:** {user_info['name']}")
-        if 'email' in user_info: st.markdown(f"**メール:** {user_info['email']}")
-        if st.button("🔑 ログアウト", use_container_width=True): google_logout()
+        if 'name' in user_info: 
+            st.markdown(f"**ユーザー:** {user_info['name']}")
+        if 'email' in user_info: 
+            st.markdown(f"**メール:** {user_info['email']}")
+        if st.button("🔑 ログアウト", use_container_width=True): 
+            google_logout()
+    
     st.divider()
 
 # --- メインコンテンツ ---
