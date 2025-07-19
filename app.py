@@ -15,7 +15,7 @@ st.set_page_config(page_title="AIアシスタント・ポータル", page_icon="
 localS = LocalStorage()
 
 # ===============================================================
-# 2. 認証処理の核心部（あなたのチェックポイントを反映）
+# 2. 認証処理の核心部
 # ===============================================================
 try:
     if "code" in st.query_params:
@@ -24,7 +24,10 @@ try:
         returned_state = st.query_params.get("state")
 
         if saved_state and saved_state == returned_state:
-            localS.removeItem("google_auth_state")
+            # ★★★ ここが、ただ一つの、修正点です ★★★
+            # 存在しない removeItem の代わりに、setItemで値を上書きして無効化する
+            localS.setItem("google_auth_state", "")
+
             flow = Flow.from_client_config(
                 client_config={ "web": { "client_id": st.secrets["GOOGLE_CLIENT_ID"], "client_secret": st.secrets["GOOGLE_CLIENT_SECRET"],
                                          "auth_uri": "https://accounts.google.com/o/oauth2/auth", "token_uri": "https://oauth2.googleapis.com/token",
@@ -46,16 +49,13 @@ try:
             if user_info_response.status_code == 200:
                 st.session_state["google_user_info"] = user_info_response.json()
 
-            # ✅ チェックポイント2：rerun と clear の順序を修正
             st.rerun()
             st.query_params.clear()
 
 except Exception as e:
-    # ✅ チェックポイント5：詳細なエラーログを出力
     st.error("Google認証中に、予期せぬエラーが発生しました。")
     st.session_state['last_error'] = traceback.format_exc()
     st.code(st.session_state['last_error'])
-
 
 # ===============================================================
 # 3. ログイン/ログアウト関数
@@ -84,7 +84,6 @@ def google_logout():
 # ===============================================================
 with st.sidebar:
     st.title("🤖 AIアシスタント・ポータル")
-    # ✅ チェックポイント5：より厳格なログイン判定
     if "google_user_info" not in st.session_state:
         st.info("各ツールを利用するには、Googleアカウントでのログインが必要です。")
         login_url = generate_login_url()
@@ -104,14 +103,12 @@ else:
     with st.sidebar:
         tool_choice = st.radio("使いたいツールを選んでください:", tool_options, disabled=False)
         st.divider()
-        if st.toggle("開発者モード", key="dev_mode", value=True): # デフォルトでONにする
+        if st.toggle("開発者モード", key="dev_mode", value=True):
             st.header("🗺️ 宝の地図")
-            # ✅ チェックポイント1：セッション情報を常に表示
             st.write("🪪 現在のセッション情報:", st.session_state)
             if "last_error" in st.session_state:
                 with st.expander("直近のエラーログ", expanded=True):
                     st.code(st.session_state["last_error"])
-
 
     if tool_choice == "🚙 交通費自動計算":
         st.header("🚙 交通費自動計算ツール")
