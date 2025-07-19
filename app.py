@@ -16,7 +16,13 @@ try:
     CLIENT_ID = st.secrets["GOOGLE_CLIENT_ID"]
     CLIENT_SECRET = st.secrets["GOOGLE_CLIENT_SECRET"]
     REDIRECT_URI = st.secrets["REDIRECT_URI"]
-    SCOPE = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/userinfo.email", "https://www.googleapis.com/auth/userinfo.profile"]
+    # スコープにopenidを明示的に追加してGoogleの自動追加に対応
+    SCOPE = [
+        "openid",
+        "https://www.googleapis.com/auth/userinfo.email", 
+        "https://www.googleapis.com/auth/userinfo.profile",
+        "https://www.googleapis.com/auth/spreadsheets"
+    ]
 except (KeyError, FileNotFoundError):
     st.error("重大なエラー: StreamlitのSecretsにGoogle認証情報が設定されていません。")
     st.stop()
@@ -60,22 +66,48 @@ if "code" in st.query_params and "google_credentials" not in st.session_state:
             with st.spinner("Google認証処理中..."):
                 # 認証コードを使ってトークンを取得
                 flow = get_google_auth_flow()
-                flow.fetch_token(code=st.query_params["code"])
+                
+                # スコープの変更を許容するためのオプション設定
+                try:
+                    flow.fetch_token(code=st.query_params["code"])
+                except Exception as token_error:
+                    # スコープエラーの場合は新しいflowで再試行
+                    if "Scope has changed" in str(token_error):
+                        st.info("スコープの調整中...")
+                        # 新しいflowを作成してトークンを再取得
+                        flow = Flow.from_client_config(
+                            client_config={ 
+                                "web": { 
+                                    "client_id": CLIENT_ID, 
+                                    "client_secret": CLIENT_SECRET,
+                                    "auth_uri": "https://accounts.google.com/o/oauth2/auth", 
+                                    "token_uri": "https://oauth2.googleapis.com/token",
+                                    "redirect_uris": [REDIRECT_URI], 
+                                }
+                            },
+                            # 受信したスコープに合わせて動的に調整
+                            scopes=None,  # スコープを指定せずに柔軟に対応
+                            redirect_uri=REDIRECT_URI
+                        )
+                        flow.fetch_token(code=st.query_params["code"])
+                    else:
+                        raise token_error
+                
                 creds = flow.credentials
                 
-                # セッション状態に認証情報を保存
+                # セッション状態に認証情報を保存（スコープは実際に取得されたものを使用）
                 st.session_state["google_credentials"] = {
                     "token": creds.token, 
                     "refresh_token": creds.refresh_token, 
                     "token_uri": creds.token_uri,
                     "client_id": creds.client_id, 
                     "client_secret": creds.client_secret, 
-                    "scopes": creds.scopes,
+                    "scopes": creds.scopes,  # 実際のスコープを保存
                 }
                 
                 # ユーザー情報を取得
                 user_info_response = requests.get(
-                    "https://www.googleapis.com/oauth2/v1/userinfo",
+                    "https://www.googleapis.com/oauth2/v2/userinfo",  # v2エンドポイントを使用
                     headers={"Authorization": f"Bearer {creds.token}"},
                 )
                 user_info_response.raise_for_status()
@@ -83,6 +115,9 @@ if "code" in st.query_params and "google_credentials" not in st.session_state:
                 
                 # 認証成功をログに記録
                 st.success("✅ Google認証が正常に完了しました！")
+                
+                # 取得されたスコープをデバッグ表示
+                st.info(f"取得されたスコープ: {', '.join(creds.scopes) if creds.scopes else 'なし'}")
                 
                 # URLパラメータをクリアしてリダイレクト
                 st.query_params.clear()
