@@ -13,7 +13,12 @@ from tools import koutsuhi, calendar_tool, transcript_tool, research_tool
 # ===============================================================
 # 1. アプリの基本設定と、神聖なる金庫からの情報取得
 # ===============================================================
-st.set_page_config(page_title="AIアシスタント・ポータル", page_icon="🤖", layout="wide")
+st.set_page_config(
+    page_title="AIアシスタント・ポータル", 
+    page_icon="🤖", 
+    layout="wide",
+    initial_sidebar_state="expanded"  # モバイルでサイドバーを展開
+)
 
 try:
     CLIENT_ID = st.secrets["GOOGLE_CLIENT_ID"]
@@ -31,10 +36,10 @@ except (KeyError, FileNotFoundError):
     st.stop()
 
 # ===============================================================
-# 2. ログイン/ログアウト関数（修正版）
+# 2. ログイン/ログアウト関数（モバイル対応版）
 # ===============================================================
 def get_google_auth_flow():
-    """Google OAuth フローを正しく初期化"""
+    """Google OAuth フローを正しく初期化（モバイル対応）"""
     client_config = {
         "web": {
             "client_id": CLIENT_ID,
@@ -65,7 +70,7 @@ def google_logout():
     st.rerun()
 
 # ===============================================================
-# 3. 認証処理の核心部（修正版）
+# 3. 認証処理の核心部（モバイル対応強化版）
 # ===============================================================
 if "code" in st.query_params and "google_credentials" not in st.session_state:
     query_state = st.query_params.get("state")
@@ -77,8 +82,30 @@ if "code" in st.query_params and "google_credentials" not in st.session_state:
             with st.spinner("Google認証処理中..."):
                 flow = get_google_auth_flow()
                 
-                # 認証コードを使ってトークンを取得
-                flow.fetch_token(code=st.query_params["code"])
+                try:
+                    # 認証コードを使ってトークンを取得
+                    flow.fetch_token(code=st.query_params["code"])
+                except Exception as token_error:
+                    # スコープ変更エラーの場合の処理
+                    if "Scope has changed" in str(token_error):
+                        st.warning("スコープが変更されました。再認証を試行します...")
+                        flow = Flow.from_client_config(
+                            client_config={
+                                "web": {
+                                    "client_id": CLIENT_ID,
+                                    "client_secret": CLIENT_SECRET,
+                                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                                    "token_uri": "https://oauth2.googleapis.com/token",
+                                    "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+                                    "redirect_uris": [REDIRECT_URI]
+                                }
+                            },
+                            scopes=None
+                        )
+                        flow.redirect_uri = REDIRECT_URI
+                        flow.fetch_token(code=st.query_params["code"])
+                    else:
+                        raise token_error
                 
                 creds = flow.credentials
                 
@@ -104,14 +131,16 @@ if "code" in st.query_params and "google_credentials" not in st.session_state:
                 
                 # クエリパラメータをクリア
                 st.query_params.clear()
-                time.sleep(1)
+                
+                # モバイル環境での安定性を向上
+                time.sleep(2)  # 少し長めの待機時間
                 st.rerun()
                 
         except Exception as e:
             st.error(f"Google認証中にエラーが発生しました: {str(e)}")
             st.code(traceback.format_exc())
             st.query_params.clear()
-            if st.button("トップページに戻る"):
+            if st.button("トップページに戻る", use_container_width=True):
                 st.rerun()
     else:
         st.warning("認証フローを再開します...")
@@ -119,7 +148,7 @@ if "code" in st.query_params and "google_credentials" not in st.session_state:
         st.rerun()
 
 # ===============================================================
-# 4. UI描画
+# 4. UI描画（モバイル最適化版）
 # ===============================================================
 with st.sidebar:
     st.title("🤖 AIアシスタント・ポータル")
@@ -130,18 +159,30 @@ with st.sidebar:
         try:
             flow = get_google_auth_flow()
             
-            # 認証URLを生成
+            # 認証URLを生成（モバイル対応の修正）
             authorization_url, state = flow.authorization_url(
                 prompt="consent",
                 access_type="offline",
-                include_granted_scopes=True
+                include_granted_scopes=True  # ブール値として正しく指定
             )
             
             # セッションにstateを保存
             st.session_state["google_auth_state"] = state
             
-            # ログインリンクを表示
-            st.markdown(f"**[🗝️ Googleアカウントでログイン]({authorization_url})**")
+            # モバイル対応のログインボタン
+            st.link_button(
+                "🗝️ Googleアカウントでログイン", 
+                authorization_url, 
+                use_container_width=True
+            )
+            
+            # モバイル環境での代替手段も提供
+            with st.expander("🔧 うまくログインできない場合"):
+                st.markdown(f"""
+                以下のリンクを直接コピーしてブラウザで開いてください：
+                
+                {authorization_url}
+                """)
             
         except Exception as e:
             st.error(f"認証フローの初期化中にエラーが発生しました: {str(e)}")
@@ -160,7 +201,7 @@ with st.sidebar:
 
     # ツール選択（ログイン後のみ）
     if "google_user_info" in st.session_state:
-        tool_options = ("📅 カレンダー登録", "💹 価格リサーチ", "📝 議事録作成", "🚇 AI乗り換え案内")
+        tool_options = ("📅 カレンダー登録", "💹 価格リサーチ", "📝 議事録作成", "🚇 AI乗り換け案内")
         tool_choice = st.radio(
             "使いたいツールを選んでください:", 
             tool_options, 
@@ -170,6 +211,7 @@ with st.sidebar:
         st.divider()
         st.header("⚙️ APIキー設定")
         
+        # ローカルストレージのエラーハンドリング強化
         try:
             localS = LocalStorage()
             saved_keys = localS.getItem("api_keys")
@@ -177,54 +219,68 @@ with st.sidebar:
             gemini_default = saved_keys.get('gemini', '') if isinstance(saved_keys, dict) else ""
             speech_default = saved_keys.get('speech', '') if isinstance(saved_keys, dict) else ""
             
-            gemini_api_key = st.text_input(
-                "1. Gemini APIキー", 
-                type="password", 
-                value=gemini_default, 
-                help="Google AI Studioで取得したキー"
-            )
-            
-            speech_api_key = st.text_input(
-                "2. Speech-to-Text APIキー", 
-                type="password", 
-                value=speech_default, 
-                help="Google Cloud Platformで取得したキー"
-            )
-            
-            if st.button("APIキーをこのブラウザに保存する"):
+        except Exception as e:
+            st.warning(f"ローカルストレージの読み込み中にエラーが発生しました: {str(e)}")
+            gemini_default = ""
+            speech_default = ""
+        
+        gemini_api_key = st.text_input(
+            "1. Gemini APIキー", 
+            type="password", 
+            value=gemini_default, 
+            help="Google AI Studioで取得したキー"
+        )
+        
+        speech_api_key = st.text_input(
+            "2. Speech-to-Text APIキー", 
+            type="password", 
+            value=speech_default, 
+            help="Google Cloud Platformで取得したキー"
+        )
+        
+        if st.button("APIキーをこのブラウザに保存する", use_container_width=True):
+            try:
+                localS = LocalStorage()
                 localS.setItem("api_keys", {
                     "gemini": gemini_api_key, 
                     "speech": speech_api_key
                 })
                 st.success("キーを保存しました！")
-            
-            st.markdown("""
-            <div style="font-size: 0.9em;">
-                <a href="https://aistudio.google.com/app/apikey" target="_blank">1. Gemini APIキーの取得</a><br>
-                <a href="https://console.cloud.google.com/apis/credentials" target="_blank">2. Speech-to-Text APIキーの取得</a>
-            </div>
-            """, unsafe_allow_html=True)
-            
-        except Exception as e:
-            st.error(f"ローカルストレージの処理中にエラーが発生しました: {str(e)}")
-            # フォールバック: セッションステートを使用
-            gemini_api_key = st.text_input(
-                "1. Gemini APIキー", 
-                type="password", 
-                help="Google AI Studioで取得したキー"
-            )
-            speech_api_key = st.text_input(
-                "2. Speech-to-Text APIキー", 
-                type="password", 
-                help="Google Cloud Platformで取得したキー"
-            )
+            except Exception as e:
+                st.error(f"キーの保存中にエラーが発生しました: {str(e)}")
+                st.info("セッション中は入力されたキーが保持されます。")
+        
+        # リンクをモバイル対応に改善
+        st.markdown("""
+        <div style="font-size: 0.9em;">
+            <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">
+                1. Gemini APIキーの取得 ↗
+            </a><br>
+            <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">
+                2. Speech-to-Text APIキーの取得 ↗
+            </a>
+        </div>
+        """, unsafe_allow_html=True)
 
 # ===============================================================
-# 5. メインコンテンツ
+# 5. メインコンテンツ（モバイル最適化）
 # ===============================================================
 if "google_user_info" not in st.session_state:
     st.header("ようこそ、AIアシスタント・ポータルへ！")
-    st.info("👆 サイドバーにある「🗝️ Googleアカウントでログイン」リンクをクリックして、旅を始めましょう！")
+    st.info("👆 サイドバーにある「🗝️ Googleアカウントでログイン」ボタンを押して、旅を始めましょう！")
+    
+    # モバイル環境での注意事項
+    with st.expander("📱 モバイル環境でのご利用について"):
+        st.markdown("""
+        **スマートフォンでのログインがうまくいかない場合：**
+        
+        1. **ブラウザのキャッシュをクリア**してから再度お試しください
+        2. **シークレット/プライベートモード**での利用をお試しください
+        3. **別のブラウザ**（Chrome、Safari、Firefoxなど）でお試しください
+        4. サイドバーの「うまくログインできない場合」セクションのリンクを直接使用してください
+        
+        **推奨ブラウザ：** Chrome（Android）、Safari（iOS）
+        """)
 else:
     tool_choice = st.session_state.get("tool_choice_radio")
     if tool_choice:
@@ -248,3 +304,7 @@ else:
     else:
         st.header("ツールを選択してください")
         st.info("サイドバーからご利用になりたいツールを選択してください。")
+        
+        # モバイル環境での操作ガイド
+        if st.button("📱 サイドバーを開く", help="モバイル環境でサイドバーが見えない場合はこちら"):
+            st.info("画面左上の「>」アイコンをタップしてサイドバーを開いてください。")
