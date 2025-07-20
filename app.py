@@ -151,8 +151,8 @@ if "google_user_info" not in st.session_state:
     st.info("👆 サイドバーにある「🗝️ Googleアカウントでログイン」ボタンを押して、旅を始めましょう！")
 else:
     tool_choice = st.session_state.get("tool_choice_radio")
-    st.header(f"{tool_choice}")
-    st.divider()
+    # st.header(f"{tool_choice}")
+    # st.divider()
 
     gemini_api_key = st.session_state.get('gemini_api_key', '')
     speech_api_key = st.session_state.get('speech_api_key', '')
