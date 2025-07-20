@@ -7,8 +7,7 @@ import traceback
 import time
 from streamlit_local_storage import LocalStorage
 
-# ★★★ 変更点①：専門家のインポート ★★★
-# toolsフォルダから、専門家であるkoutsuhiと、新しいcalendar_toolモジュールをインポート
+# ★★★ 専門家のインポート ★★★
 from tools import koutsuhi, calendar_tool
 
 # ===============================================================
@@ -20,21 +19,21 @@ try:
     CLIENT_ID = st.secrets["GOOGLE_CLIENT_ID"]
     CLIENT_SECRET = st.secrets["GOOGLE_CLIENT_SECRET"]
     REDIRECT_URI = st.secrets["REDIRECT_URI"]
+    # ★★★ 修正点①：Scopeを元の完全な状態に戻す ★★★
+    # 将来的に他のツールも移行することを見据え、全てのScopeを定義しておく
     SCOPE = [
         "openid",
         "https://www.googleapis.com/auth/userinfo.email", 
         "https://www.googleapis.com/auth/userinfo.profile",
-        # gspreadを使う場合は必要だが、現状は不要なためコメントアウト。将来の拡張性のために残す。
-        # "https://www.googleapis.com/auth/spreadsheets",
-        # "https://www.googleapis.com/auth/drive.readonly"
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive.readonly"
     ]
 except (KeyError, FileNotFoundError):
     st.error("重大なエラー: StreamlitのSecretsにGoogle認証情報が設定されていません。")
     st.stop()
 
 # ===============================================================
-# 2. ログイン/ログアウト関数
-# (このセクションは元のコードから変更ありません)
+# 2. ログイン/ログアウト関数 (変更なし)
 # ===============================================================
 def get_google_auth_flow():
     return Flow.from_client_config(
@@ -50,12 +49,11 @@ def google_logout():
     for key in keys_to_clear:
         st.session_state.pop(key, None)
     st.success("ログアウトしました。")
-    # ログアウト後にAPIキーもクリアした方が親切かもしれないが、利便性を考え一旦保持
     st.rerun()
 
 # ===============================================================
 # 3. 認証処理の核心部
-# (このセクションは元のコードから変更ありません)
+# ★★★ 修正点②：ちゃろ様の「成功コード」から、完璧なエラー処理を復元 ★★★
 # ===============================================================
 if "code" in st.query_params and "google_credentials" not in st.session_state:
     query_state = st.query_params.get("state")
@@ -65,7 +63,27 @@ if "code" in st.query_params and "google_credentials" not in st.session_state:
         try:
             with st.spinner("Google認証処理中..."):
                 flow = get_google_auth_flow()
-                flow.fetch_token(code=st.query_params["code"])
+                
+                # --- ここからが、復元した、極めて重要なロジックです ---
+                try:
+                    flow.fetch_token(code=st.query_params["code"])
+                except Exception as token_error:
+                    # 「Scopeが変わった」という警告を、例外としてではなく、正常な処理として扱う
+                    if "Scope has changed" in str(token_error):
+                        # Googleから返されたScopeを受け入れるため、Scopeを未指定でFlowを再生成
+                        flow = Flow.from_client_config(
+                            client_config={ "web": { "client_id": CLIENT_ID, "client_secret": CLIENT_SECRET,
+                                                     "auth_uri": "https://accounts.google.com/o/oauth2/auth", "token_uri": "https://oauth2.googleapis.com/token",
+                                                     "redirect_uris": [REDIRECT_URI], }},
+                            scopes=None, # ScopeをNoneに設定
+                            redirect_uri=REDIRECT_URI
+                        )
+                        # 再度トークンを取得
+                        flow.fetch_token(code=st.query_params["code"])
+                    else:
+                        # それ以外のエラーは、そのまま表示する
+                        raise token_error
+                # --- ここまでが復元したロジックです ---
                 
                 creds = flow.credentials
                 st.session_state["google_credentials"] = {
@@ -97,7 +115,7 @@ if "code" in st.query_params and "google_credentials" not in st.session_state:
         st.rerun()
 
 # ===============================================================
-# 4. UI描画
+# 4. UI描画 (変更なし)
 # ===============================================================
 with st.sidebar:
     st.title("🤖 AIアシスタント・ポータル")
@@ -117,7 +135,6 @@ with st.sidebar:
 
     st.divider()
     
-    # ログイン後にツール選択とAPIキー設定を表示
     if "google_user_info" in st.session_state:
         tool_options = ("📅 カレンダー登録", "🚇 AI乗り換え案内", "💹 価格リサーチ", "📝 議事録作成")
         tool_choice = st.radio("使いたいツールを選んでください:", tool_options, key="tool_choice_radio")
@@ -125,7 +142,6 @@ with st.sidebar:
         st.divider()
         st.header("⚙️ APIキー設定")
         
-        # ★★★ 変更点②：「成功コード」のAPIキー管理機能をここに復活 ★★★
         localS = LocalStorage()
         saved_keys = localS.getItem("api_keys")
         gemini_default = saved_keys.get('gemini', '') if isinstance(saved_keys, dict) else ""
@@ -146,28 +162,21 @@ with st.sidebar:
         """, unsafe_allow_html=True)
 
 
-# --- メインコンテンツ ---
+# --- メインコンテンツ --- (変更なし)
 if "google_user_info" not in st.session_state:
     st.header("ようこそ、AIアシスタント・ポータルへ！")
     st.info("👆 サイドバーにある「🗝️ Googleアカウントでログイン」ボタンを押して、旅を始めましょう！")
 else:
-    # st.session_stateからツール選択を取得
     tool_choice = st.session_state.get("tool_choice_radio")
     
     st.header(f"{tool_choice}")
     st.divider()
 
-    # ★★★ 変更点③：ユーザーの選択に応じて、専門家の仕事を呼び出す ★★★
     if tool_choice == "🚇 AI乗り換え案内":
-        # 「AI乗り換え案内」が選ばれたら、koutsuhiモジュールのshow_tool関数を実行
-        # (注：koutsuhi.pyも今後APIキーを受け取るように修正が必要です)
         koutsuhi.show_tool()
     
     elif tool_choice == "📅 カレンダー登録":
-        # 「カレンダー登録」が選ばれたら、calendar_toolモジュールのshow_tool関数を実行
-        # その際、司令塔が管理しているAPIキーを引数として渡す
         calendar_tool.show_tool(gemini_api_key=gemini_api_key, speech_api_key=speech_api_key)
     
     else:
-        # まだ作られていないツールが選ばれた場合のメッセージ
         st.warning(f"ツール「{tool_choice}」は現在、新しい認証システムへの移行作業中です。")
