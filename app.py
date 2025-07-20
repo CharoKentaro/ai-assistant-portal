@@ -102,7 +102,7 @@ with st.sidebar:
         if st.button("🔑 ログアウト", use_container_width=True): google_logout()
         st.divider()
 
-        tool_options = ("📅 カンダー登録", "💹 価格リサーチ", "📝 議事録作成", "🚇 AI乗り換え案内")
+        tool_options = ("📅 カレンダー登録", "💹 価格リサーチ", "📝 議事録作成", "🚇 AI乗り換え案内")
         tool_choice = st.radio("使いたいツールを選んでください:", tool_options, key="tool_choice_radio")
         st.divider()
         
