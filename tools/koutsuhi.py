@@ -1,4 +1,4 @@
-# tools/koutsuhi.py (ハイブリッドAI搭載型 - DuplicateKeyバグ最終修正版)
+# tools/koutsuhi.py (最後の武器"departure_time"搭載 最終決戦仕様)
 
 import streamlit as st
 import googlemaps
@@ -8,22 +8,20 @@ import time
 from streamlit_local_storage import LocalStorage
 import re
 import json
+from datetime import datetime # ★★★ 最後の武器をインポート ★★★
 
 # ------------------------------------------------
-# 2つのAPIキーを管理する、最終的に完成した心臓部
+# APIキー管理の心臓部（変更なし）
 # ------------------------------------------------
 def get_user_api_keys():
     localS = LocalStorage()
     maps_key_data = localS.getItem("user_gmaps_api_key")
     gemini_key_data = localS.getItem("user_gemini_api_key")
-
     maps_key = maps_key_data.get("value") if isinstance(maps_key_data, dict) else maps_key_data
     gemini_key = gemini_key_data.get("value") if isinstance(gemini_key_data, dict) else gemini_key_data
-
     with st.sidebar:
         st.divider()
         st.subheader("🔑 APIキー設定")
-
         if maps_key and gemini_key:
             st.success("✅ 全てのAPIキーが設定済みです。")
             if st.button("🔄 APIキーを再設定する"):
@@ -34,20 +32,17 @@ def get_user_api_keys():
         else:
             st.warning("⚠️ APIキーが設定されていません。")
             with st.form("api_keys_form"):
-                st.info("このツールを利用するには、2つのAPIキーが必要です。")
+                st.info("このツールには、2つのAPIキーが必要です。")
                 new_maps_key = st.text_input("あなたのGoogle Maps APIキー", type="password", value=maps_key or "")
                 new_gemini_key = st.text_input("あなたのGemini APIキー", type="password", value=gemini_key or "")
                 submitted = st.form_submit_button("🔐 これらのキーを記憶させる")
                 if submitted:
-                    if not new_maps_key or not new_gemini_key:
-                        st.error("❌ 両方のAPIキーを入力してください。")
+                    if not new_maps_key or not new_gemini_key: st.error("❌ 両方のAPIキーを入力してください。")
                     else:
-                        # ★★★ ここが、最後の、そして最も重要な修正点です ★★★
                         localS.setItem("user_gmaps_api_key", {"value": new_maps_key.strip()}, key="maps_set")
                         localS.setItem("user_gemini_api_key", {"value": new_gemini_key.strip()}, key="gemini_set")
                         st.success("✅ キーを記憶しました！")
-                        time.sleep(1)
-                        st.rerun()
+                        time.sleep(1); st.rerun()
             return None, None
 
 # ------------------------------------------------
@@ -71,8 +66,7 @@ def generate_ai_transit_summary(gemini_key, directions_result):
         genai.configure(api_key=gemini_key)
         model = genai.GenerativeModel('gemini-1.5-flash-latest')
         prompt = f"""
-        あなたは、日本の交通事情に精通した、世界最高の旅行コンシェルジュです。
-        提供されたGoogle Maps APIのJSONデータを元に、ユーザーが心から「分かりやすい！」と感じる、最高の乗り換え案内を生成してください。
+        あなたは、日本の交通事情に精通した、世界最高の旅行コンシェルジュです。提供されたGoogle Maps APIのJSONデータを元に、ユーザーが心から「分かりやすい！」と感じる、最高の乗り換え案内を生成してください。
         # 指示
         1. JSONデータから、旅行の「総所要時間」と、もし存在するなら「運賃(fare)」を抽出し、最初に明確に提示してください。
         2. 次に「経路案内」として、ステップごとの具体的な指示を、番号付きリストで作成してください。
@@ -92,7 +86,7 @@ def generate_ai_transit_summary(gemini_key, directions_result):
     except Exception as e: return None, f"AIによる要約生成中にエラーが発生しました: {e}"
 
 # ------------------------------------------------
-# ツールの本体（変更なし）
+# ツールの本体
 # ------------------------------------------------
 def show_tool():
     maps_key, gemini_key = get_user_api_keys()
@@ -114,7 +108,19 @@ def show_tool():
                     if dest_error: st.error(f"目的地エラー: {dest_error}"); return
                     origin_address = origin_place['formatted_address']
                     destination_address = destination_place['formatted_address']
-                    directions_result = gmaps.directions(origin=origin_address, destination=destination_address, mode="transit", language="ja")
+                    
+                    # ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
+                    # ★★★ これが、GoogleのAIに、一切の言い訳をさせない、 ★★★
+                    # ★★★           最後の、そして究極の命令です！         ★★★
+                    # ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
+                    directions_result = gmaps.directions(
+                        origin=origin_address, 
+                        destination=destination_address, 
+                        mode="transit", 
+                        language="ja",
+                        departure_time=datetime.now() # 「今」出発するという、絶対的な命令！
+                    )
+                    
                     if not directions_result: st.error("❌ 指定された場所間の公共交通機関ルートが見つかりませんでした。"); return
                     summary, error = generate_ai_transit_summary(gemini_key, directions_result)
                     if error:
