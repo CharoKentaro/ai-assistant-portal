@@ -1,4 +1,4 @@
-# tools/koutsuhi.py (最後の武器"departure_time"搭載 最終決戦仕様)
+# tools/koutsuhi.py (AIへの最終命令仕様 - これが最後のコードです)
 
 import streamlit as st
 import googlemaps
@@ -8,10 +8,10 @@ import time
 from streamlit_local_storage import LocalStorage
 import re
 import json
-from datetime import datetime # ★★★ 最後の武器をインポート ★★★
+from datetime import datetime
 
 # ------------------------------------------------
-# APIキー管理の心臓部（変更なし）
+# APIキー管理（変更なし）
 # ------------------------------------------------
 def get_user_api_keys():
     localS = LocalStorage()
@@ -20,8 +20,7 @@ def get_user_api_keys():
     maps_key = maps_key_data.get("value") if isinstance(maps_key_data, dict) else maps_key_data
     gemini_key = gemini_key_data.get("value") if isinstance(gemini_key_data, dict) else gemini_key_data
     with st.sidebar:
-        st.divider()
-        st.subheader("🔑 APIキー設定")
+        st.divider(); st.subheader("🔑 APIキー設定")
         if maps_key and gemini_key:
             st.success("✅ 全てのAPIキーが設定済みです。")
             if st.button("🔄 APIキーを再設定する"):
@@ -41,8 +40,7 @@ def get_user_api_keys():
                     else:
                         localS.setItem("user_gmaps_api_key", {"value": new_maps_key.strip()}, key="maps_set")
                         localS.setItem("user_gemini_api_key", {"value": new_gemini_key.strip()}, key="gemini_set")
-                        st.success("✅ キーを記憶しました！")
-                        time.sleep(1); st.rerun()
+                        st.success("✅ キーを記憶しました！"); time.sleep(1); st.rerun()
             return None, None
 
 # ------------------------------------------------
@@ -59,31 +57,47 @@ def find_best_place(gmaps, query):
     except Exception as e: return None, f"場所の検索中にエラーが発生しました: {e}"
 
 # ------------------------------------------------
-# AIへの指示書（プロンプト）（変更なし）
+# ★★★ これが、新しい、AIへの「最終命令書（プロンプト）」です ★★★
 # ------------------------------------------------
-def generate_ai_transit_summary(gemini_key, directions_result):
+def generate_ai_transit_summary(gemini_key, directions_result, origin_query, destination_query):
     try:
         genai.configure(api_key=gemini_key)
         model = genai.GenerativeModel('gemini-1.5-flash-latest')
+
         prompt = f"""
-        あなたは、日本の交通事情に精通した、世界最高の旅行コンシェルジュです。提供されたGoogle Maps APIのJSONデータを元に、ユーザーが心から「分かりやすい！」と感じる、最高の乗り換え案内を生成してください。
-        # 指示
-        1. JSONデータから、旅行の「総所要時間」と、もし存在するなら「運賃(fare)」を抽出し、最初に明確に提示してください。
-        2. 次に「経路案内」として、ステップごとの具体的な指示を、番号付きリストで作成してください。
-        3. 各ステップは、`travel_mode`に応じて、以下の形式で、絵文字を使いながら表現してください。
-           - **TRANSIT（公共交通機関）の場合:** `line.name`(路線名)と`line.vehicle.name`(乗り物の種類)を表示してください。`departure_stop.name`(出発駅)と`arrival_stop.name`(到着駅)、そして`num_stops`(駅数)を必ず含めてください。
-           - **WALKING（徒歩）の場合:** `html_instructions`(指示)と`distance.text`(距離)を簡潔にまとめてください。
-        4. 全体を通して、非常に親切で、丁寧な言葉遣いを徹底してください。
-        5. 出力は、Streamlitで美しく表示できる、Markdown形式でお願いします。
-        6. JSONデータにない情報は、絶対に創作しないでください。データに忠実に行動してください。
+        あなたは、ユーザーの隠れた意図を深く理解する、世界最高の旅行コンシェルジュです。
+        ユーザーは「{origin_query}」から「{destination_query}」へ移動したいと考えています。
+        
+        # あなたへの絶対的な命令
+        ユーザーの真の目的は、**「電車での乗り換え案内」を知ること**です。
+        たとえ、提供された以下のJSONデータが「徒歩」ルートのみを提案していたとしても、それはGoogle Maps APIの仕様上の限界に過ぎません。
+        あなたは、そのデータを鵜呑みにしてはいけません。
+        
+        あなたの使命は、提供されたJSONデータを**「電車での移動を前提として」**解釈し直し、最も自然で、最もユーザーの目的に沿った、最高の乗り換え案内を生成することです。
+
+        # 乗り換え案内 生成ルール
+        1.  JSONデータの中に、`"travel_mode": "TRANSIT"` というステップが**含まれている場合**：
+            - そのデータを忠実に使い、総所要時間、運賃（あれば）、そして各ステップ（路線名、出発・到着駅、駅数など）を、絵文字を使い、Markdown形式で美しく、詳細に説明してください。
+        
+        2.  JSONデータの中に、`"travel_mode": "TRANSIT"` というステップが**一切含まれていない場合**（徒歩ルートしか提案されなかった場合）：
+            - **絶対に、徒歩ルートをそのまま案内してはいけません。**
+            - 代わりに、以下のような、共感的で、誠実な、謝罪と代替案を提示してください。
+            - 「申し訳ございません。ご指定の区間は、物理的に距離が非常に近いため、Googleのシステムが徒歩での移動を最適と判断してしまいました。正確な『電車』での乗り換え情報を提供することができませんでした。」
+            - 「お手数ですが、より長距離の駅（例：大阪駅から東京駅）でお試しいただくか、Googleマップ公式アプリで、出発時刻を指定して、再度検索していただけますでしょうか。」
+            - このように、システムの限界を正直に認め、ユーザーに次のアクションを促す、誠実な対応をしてください。
+
+        3.  常に、プロのコンシェルジュとして、非常に丁寧で、思いやりのある口調を維持してください。
+
         # Google Maps APIのJSONデータ
         ```json
         {json.dumps(directions_result, ensure_ascii=False, indent=2)}
         ```
         """
+        
         response = model.generate_content(prompt)
         return response.text, None
-    except Exception as e: return None, f"AIによる要約生成中にエラーが発生しました: {e}"
+    except Exception as e:
+        return None, f"AIによる要約生成中にエラーが発生しました: {e}"
 
 # ------------------------------------------------
 # ツールの本体
@@ -99,7 +113,8 @@ def show_tool():
             submit_button = st.form_submit_button(label="🔍 AIにルートを尋ねる")
         if submit_button:
             if not origin_query or not destination_query: st.warning("⚠️ 出発地と目的地の両方を入力してください。"); return
-            with st.spinner("🤖 2人のAIアシスタントが、協力して最適なルートを検索中です..."):
+            
+            with st.spinner("🤖 2人のAIアシスタントが、最終結論を導き出しています..."):
                 try:
                     gmaps = googlemaps.Client(key=maps_key)
                     origin_place, origin_error = find_best_place(gmaps, origin_query)
@@ -109,26 +124,20 @@ def show_tool():
                     origin_address = origin_place['formatted_address']
                     destination_address = destination_place['formatted_address']
                     
-                    # ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
-                    # ★★★ これが、GoogleのAIに、一切の言い訳をさせない、 ★★★
-                    # ★★★           最後の、そして究極の命令です！         ★★★
-                    # ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
-                    directions_result = gmaps.directions(
-                        origin=origin_address, 
-                        destination=destination_address, 
-                        mode="transit", 
-                        language="ja",
-                        departure_time=datetime.now() # 「今」出発するという、絶対的な命令！
-                    )
+                    directions_result = gmaps.directions(origin=origin_address, destination=destination_address, mode="transit", language="ja", departure_time=datetime.now())
                     
-                    if not directions_result: st.error("❌ 指定された場所間の公共交通機関ルートが見つかりませんでした。"); return
-                    summary, error = generate_ai_transit_summary(gemini_key, directions_result)
+                    if not directions_result:
+                        st.error("❌ 指定された場所間のルートが見つかりませんでした。"); return
+
+                    # ★★★ 最後の審判：結果を、AIに委ねる ★★★
+                    summary, error = generate_ai_transit_summary(gemini_key, directions_result, origin_query, destination_query)
+                    
                     if error:
                         st.error(error)
-                        with st.expander("元のAPIデータを見る"): st.json(directions_result)
                     else:
-                        st.success("✅ AIによる乗り換え案内が完成しました！")
+                        st.success("✅ AIコンシェルジュからのご案内です。")
                         st.markdown(summary)
+
                 except Exception as e:
                     st.error("⚠️ 処理中に予期しないエラーが発生しました。")
                     st.code(traceback.format_exc())
