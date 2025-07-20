@@ -3,46 +3,51 @@
 import streamlit as st
 import googlemaps
 import traceback
-# 参考コードと同様に、ローカルストレージを扱うための部品をインポート
+import time
 from streamlit_local_storage import LocalStorage
 
 # ------------------------------------------------
-# ★★★ APIキーを管理する心臓部 ★★★
-# 参考コードの「⑤ サイドバーと、APIキー入力」の思想を、さらに洗練させた関数
+# ★★★ APIキーを管理する、このファイルの心臓部 ★★★
 # ------------------------------------------------
 def get_user_api_key():
-    """ユーザーのブラウザにAPIキーを保存・管理し、そのキーを返す関数"""
+    """
+    ユーザーのブラウザにAPIキーを保存・管理し、そのキーを返す関数。
+    - キーが保存されていれば、その値を返す。
+    - 保存されていなければ、サイドバーに入力フォームを表示し、Noneを返す。
+    """
     
-    # 参考コードと同様に、LocalStorageのインスタンスを作成
     localS = LocalStorage()
+    saved_key_data = localS.getItem("user_gmaps_api_key")
     
-    # ブラウザに保存されているキーを取得しようと試みる
-    # 参考コードの localS.getItem("gemini_api_key") と同じ役割
-    saved_key = localS.getItem("user_gmaps_api_key")
-    
-    # ----------------------------------------------------
-    # 参考コードのUI部分を、私たちのアプリ用に最適化
-    # ----------------------------------------------------
     with st.sidebar:
         st.divider()
         st.subheader("🔑 APIキー設定 (AI乗り換え案内)")
         
-        # 【パターンA】キーが既に保存されている場合
-        if saved_key and saved_key.get("value"):
+        # ----------------------------------------------------
+        # ★★★ 今回のエラーを解決する、最も重要な部分 ★★★
+        # 取得したデータが「辞書か」「ただの文字列か」を、丁寧に見極めるロジック
+        # ----------------------------------------------------
+        
+        key_value = None
+        # パターン①：データが「辞書」形式で、中に'value'キーがある（理想的な状態）
+        if isinstance(saved_key_data, dict) and saved_key_data.get("value"):
+            key_value = saved_key_data["value"]
+        # パターン②：データが「文字列」として直接保存されている（以前のバージョンとの互換性のため）
+        elif isinstance(saved_key_data, str) and saved_key_data:
+            key_value = saved_key_data
+
+        # --- 表示の分岐 ---
+        # 有効なキーが見つかった場合
+        if key_value:
             st.success("APIキーは設定済みです。")
-            # ユーザーがキーを変更・削除したい場合のための便利なボタン
             if st.button("APIキーを変更・削除する"):
                 localS.removeItem("user_gmaps_api_key")
-                st.rerun() # 画面をリフレッシュして入力欄を再表示
-            
-            # 保存されているキーの値を、関数の戻り値として返す
-            return saved_key["value"]
+                st.rerun()
+            return key_value
 
-        # 【パターンB】キーがまだ保存されていない場合
+        # 有効なキーが見つからなかった場合（初回アクセスなど）
         else:
             st.warning("Google Maps APIキーが設定されていません。")
-            
-            # 参考コードの st.text_input と st.button に相当する部分
             with st.form("api_key_form"):
                 st.info("下の入力欄にご自身のAPIキーを入力してください。キーは、あなたのブラウザ内にのみ安全に保存されます。")
                 new_key = st.text_input("あなたのGoogle Maps APIキー", type="password")
@@ -52,28 +57,27 @@ def get_user_api_key():
                     if not new_key:
                         st.error("APIキーが入力されていません。")
                     else:
-                        # 入力されたキーをローカルストレージに保存
-                        # 参考コードの localS.setItem(...) と同じ役割
-                        localS.setItem("user_gmaps_api_key", new_key)
+                        # ★★★ 今後は、必ずこの「辞書」形式で保存する ★★★
+                        # これにより、将来の安定性が格段に向上します。
+                        localS.setItem("user_gmaps_api_key", {"value": new_key})
                         st.success("キーを記憶しました！")
-                        st.rerun() # 画面をリフレッシュして成功表示に切り替え
+                        time.sleep(1) # ユーザーがメッセージを読むための、優しい待ち時間
+                        st.rerun()
             
-            # キーが設定されるまで、ツールのメイン機能はここで停止
             return None
 
 # ------------------------------------------------
-# ツールのメイン関数
+# ★★★ ツールの本体 ★★★
 # ------------------------------------------------
 def show_tool():
-    """AI乗り換え案内（交通費計算）ツールを表示・実行する関数"""
+    """AI乗り換え案内（交通費計算）ツールを表示・実行するメイン関数"""
 
     st.header("🚇 AI乗り換え案内")
     
-    # ★★★ 最も重要なステップ ★★★
-    # まず、上記の関数を呼び出して、ユーザーのAPIキーを取得しようと試みる
+    # まず、上記の関数を呼び出して、ユーザーのAPIキーを取得する
     user_api_key = get_user_api_key()
     
-    # APIキーが取得できた場合のみ、ツールの本体を表示する
+    # APIキーが正常に取得できた場合のみ、ツールの本体機能を表示する
     if user_api_key:
         st.info("出発地と目的地の住所を入力すると、実際の移動距離と所要時間を計算します。")
         st.markdown("---")
@@ -87,17 +91,16 @@ def show_tool():
             if not origin or not destination:
                 st.warning("出発地と目的地の両方を入力してください。")
             else:
-                with st.spinner(f"ルートを検索中..."):
+                with st.spinner(f"「{origin}」から「{destination}」へのルートを検索中..."):
                     try:
-                        # ★★★ ここで、ユーザー自身のキーが使われる！ ★★★
                         gmaps = googlemaps.Client(key=user_api_key)
                         directions_result = gmaps.directions(origin, destination, mode="driving")
                         
                         if directions_result:
-                            # (結果表示のロジック ... )
                             leg = directions_result[0]['legs'][0]
                             distance = leg['distance']['text']
                             duration = leg['duration']['text']
+                            
                             st.success("✅ ルートが見つかりました！")
                             col1, col2 = st.columns(2)
                             col1.metric("総移動距離", distance)
@@ -110,8 +113,9 @@ def show_tool():
                              st.error("エラー：入力されたAPIキーが正しくないようです。サイドバーからキーを再設定してください。")
                         else:
                             st.error(f"エラー詳細: {e}")
+                            st.code(traceback.format_exc())
     else:
-        # APIキーがまだ設定されていない場合の案内メッセージ
+        # APIキーがまだ設定されていない場合の、親切な案内メッセージ
         st.info("👆 サイドバーで、ご自身のGoogle Maps APIキーを設定してください。")
         with st.expander("APIキーとは？"):
             st.write("""
