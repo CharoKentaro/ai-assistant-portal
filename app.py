@@ -99,10 +99,9 @@ with st.sidebar:
         authorization_url, state = flow.authorization_url(prompt="consent", access_type="offline", include_granted_scopes='true')
         st.session_state["google_auth_state"] = state
         
-        # ★★★ これが、すべての問題を解決する、最終的なコードです ★★★
-        # 最もシンプルで、最も確実な、ただの「ハイパーリンク」をMarkdownで表示します。
-        # これにより、ユーザーのクリックは、ブラウザにとって最も自然な操作となり、ブロックされません。
-        st.markdown(f"**[🗝️ Googleアカウントでログイン]({authorization_url})**")
+        # ★★★ ここが診断用のコードです ★★★
+        st.warning("お手数ですが、以下のURLをコピーし、ブラウザの新しいタブに貼り付けてログインしてください。")
+        st.code(authorization_url)
 
     else:
         st.success("✅ ログイン中")
@@ -132,7 +131,7 @@ with st.sidebar:
 # --- メインコンテンツ ---
 if "google_user_info" not in st.session_state:
     st.header("ようこそ、AIアシスタント・ポータルへ！")
-    st.info("👆 サイドバーにある「🗝️ Googleアカウントでログイン」リンクをクリックして、旅を始めましょう！")
+    st.info("👆 サイドバーの指示に従って、ログインしてください。")
 else:
     tool_choice = st.session_state.get("tool_choice_radio")
     st.header(f"{tool_choice}")
