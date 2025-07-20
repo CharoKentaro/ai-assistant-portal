@@ -66,10 +66,12 @@ if "code" in st.query_params and "google_credentials" not in st.session_state:
                             client_config={ "web": { "client_id": CLIENT_ID, "client_secret": CLIENT_SECRET,
                                                      "auth_uri": "https://accounts.google.com/o/oauth2/auth", "token_uri": "https://oauth2.googleapis.com/token",
                                                      "redirect_uris": [REDIRECT_URI], }},
-                            scopes=None, redirect_uri=REDIRECT_URI
+                            scopes=None,
+                            redirect_uri=REDIRECT_URI
                         )
                         flow.fetch_token(code=st.query_params["code"])
-                    else: raise token_error
+                    else:
+                        raise token_error
                 creds = flow.credentials
                 st.session_state["google_credentials"] = { "token": creds.token, "refresh_token": creds.refresh_token, "token_uri": creds.token_uri, "client_id": creds.client_id, "client_secret": creds.client_secret, "scopes": creds.scopes }
                 user_info_response = requests.get("https://www.googleapis.com/oauth2/v2/userinfo", headers={"Authorization": f"Bearer {creds.token}"})
@@ -90,7 +92,7 @@ with st.sidebar:
     if "google_user_info" not in st.session_state:
         st.info("各ツールを利用するには、Googleアカウントでのログインが必要です。")
         flow = get_google_auth_flow()
-        authorization_url, state = flow.authorization_url(prompt="consent", access_type="offline", include_granted_scopes=True) # 修正済み
+        authorization_url, state = flow.authorization_url(prompt="consent", access_type="offline", include_granted_scopes='true')
         st.session_state["google_auth_state"] = state
         st.link_button("🗝️ Googleアカウントでログイン", authorization_url, use_container_width=True)
     else:
@@ -111,14 +113,12 @@ with st.sidebar:
         gemini_default = saved_keys.get('gemini', '') if isinstance(saved_keys, dict) else ""
         speech_default = saved_keys.get('speech', '') if isinstance(saved_keys, dict) else ""
         
-        gemini_api_key = st.text_input("1. Gemini APIキー", type="password", value=gemini_default, key="gemini_api_key_input")
-        speech_api_key = st.text_input("2. Speech-to-Text APIキー", type="password", value=speech_default, key="speech_api_key_input")
+        st.session_state.gemini_api_key = st.text_input("1. Gemini APIキー", type="password", value=st.session_state.get('gemini_api_key', gemini_default), help="Google AI Studioで取得したキー")
+        st.session_state.speech_api_key = st.text_input("2. Speech-to-Text APIキー", type="password", value=st.session_state.get('speech_api_key', speech_default), help="Google Cloud Platformで取得したキー")
         
         if st.button("APIキーをこのブラウザに保存する"):
-            localS.setItem("api_keys", {"gemini": gemini_api_key, "speech": speech_api_key})
+            localS.setItem("api_keys", {"gemini": st.session_state.gemini_api_key, "speech": st.session_state.speech_api_key})
             st.success("キーを保存しました！")
-            time.sleep(1)
-            st.rerun()
         
         st.markdown("""<div style="font-size: 0.9em;"><a href="https://aistudio.google.com/app/apikey" target="_blank">1. Gemini APIキーの取得</a><br><a href="https://console.cloud.google.com/apis/credentials" target="_blank">2. Speech-to-Text APIキーの取得</a></div>""", unsafe_allow_html=True)
 
@@ -131,18 +131,17 @@ else:
     st.header(f"{tool_choice}")
     st.divider()
 
-    # サイドバーの入力ウィジェットから、最新のAPIキーを取得
-    gemini_api_key_from_input = st.session_state.get('gemini_api_key_input', '')
-    speech_api_key_from_input = st.session_state.get('speech_api_key_input', '')
+    gemini_api_key = st.session_state.get('gemini_api_key', '')
+    speech_api_key = st.session_state.get('speech_api_key', '')
 
     # ★★★ ここが、最後の、そして、唯一の、修正箇所です ★★★
     if tool_choice == "🚇 AI乗り換え案内":
-        koutsuhi.show_tool(gemini_api_key=gemini_api_key_from_input)
+        koutsuhi.show_tool(gemini_api_key=gemini_api_key)
     elif tool_choice == "📅 カレンダー登録":
-        calendar_tool.show_tool(gemini_api_key=gemini_api_key_from_input, speech_api_key=speech_api_key_from_input)
+        calendar_tool.show_tool(gemini_api_key=gemini_api_key, speech_api_key=speech_api_key)
     elif tool_choice == "📝 議事録作成":
-        transcript_tool.show_tool(speech_api_key=speech_api_key_from_input)
+        transcript_tool.show_tool(speech_api_key=speech_api_key)
     elif tool_choice == "💹 価格リサーチ":
-        research_tool.show_tool(gemini_api_key=gemini_api_key_from_input)
+        research_tool.show_tool(gemini_api_key=gemini_api_key)
     else:
         st.warning(f"ツール「{tool_choice}」は現在準備中です。")
