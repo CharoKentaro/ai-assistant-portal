@@ -20,10 +20,10 @@ try:
     CLIENT_SECRET = st.secrets["GOOGLE_CLIENT_SECRET"]
     REDIRECT_URI = st.secrets["REDIRECT_URI"]
     SCOPE = [
-        "openid", "https.www.googleapis.com/auth/userinfo.email", 
-        "https.www.googleapis.com/auth/userinfo.profile",
-        "https.www.googleapis.com/auth/spreadsheets",
-        "https.www.googleapis.com/auth/drive.readonly"
+        "openid", "https://www.googleapis.com/auth/userinfo.email", 
+        "https://www.googleapis.com/auth/userinfo.profile",
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive.readonly"
     ]
 except (KeyError, FileNotFoundError):
     st.error("重大なエラー: StreamlitのSecretsにGoogle認証情報が設定されていません。")
@@ -104,23 +104,31 @@ with st.sidebar:
         tool_options = ("📅 カレンダー登録", "💹 価格リサーチ", "📝 議事録作成", "🚇 AI乗り換え案内")
         tool_choice = st.radio("使いたいツールを選んでください:", tool_options, key="tool_choice_radio")
         st.divider()
-        st.header("⚙️ APIキー設定")
+        
+        # ★★★ ここが、最後の、そして、最も、美しい、修正箇所です ★★★
         
         localS = LocalStorage()
         saved_keys = localS.getItem("api_keys")
         gemini_default = saved_keys.get('gemini', '') if isinstance(saved_keys, dict) else ""
         speech_default = saved_keys.get('speech', '') if isinstance(saved_keys, dict) else ""
         
-        # ★★★ ここが、最後の、そして、最も、美しい、修正箇所です ★★★
-        with st.form("api_key_form", clear_on_submit=False):
-            st.text_input("1. Gemini APIキー", type="password", key="gemini_api_key", value=gemini_default)
-            st.text_input("2. Speech-to-Text APIキー", type="password", key="speech_api_key", value=speech_default)
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                save_button = st.form_submit_button("💾 保存", use_container_width=True)
-            with col2:
-                reset_button = st.form_submit_button("🔄 再設定", use_container_width=True)
+        # セッションステートに、保存されたキーを、一度だけ、読み込みます
+        if 'gemini_api_key' not in st.session_state:
+            st.session_state.gemini_api_key = gemini_default
+        if 'speech_api_key' not in st.session_state:
+            st.session_state.speech_api_key = speech_default
+
+        # expander を使い、設定UIを、安全な、別の区画へと、隔離します
+        with st.expander("⚙️ APIキーの表示と再設定", expanded=not(st.session_state.gemini_api_key and st.session_state.speech_api_key)):
+            with st.form("api_key_form", clear_on_submit=False):
+                st.session_state.gemini_api_key = st.text_input("1. Gemini APIキー", type="password", value=st.session_state.gemini_api_key)
+                st.session_state.speech_api_key = st.text_input("2. Speech-to-Text APIキー", type="password", value=st.session_state.speech_api_key)
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    save_button = st.form_submit_button("💾 保存", use_container_width=True)
+                with col2:
+                    reset_button = st.form_submit_button("🔄 クリア", use_container_width=True)
 
         if save_button:
             localS.setItem("api_keys", {"gemini": st.session_state.gemini_api_key, "speech": st.session_state.speech_api_key})
