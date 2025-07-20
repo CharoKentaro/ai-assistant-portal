@@ -96,12 +96,18 @@ with st.sidebar:
     if "google_user_info" not in st.session_state:
         st.info("各ツールを利用するには、Googleアカウントでのログインが必要です。")
         flow = get_google_auth_flow()
-        authorization_url, state = flow.authorization_url(prompt="consent", access_type="offline", include_granted_scopes='true')
+        
+        # ★★★ ここが、私の過ちを正した、ただ一つの修正箇所です ★★★
+        # 'true' という「文字列」ではなく、True という「真偽値」を渡します。
+        authorization_url, state = flow.authorization_url(
+            prompt="consent", 
+            access_type="offline", 
+            include_granted_scopes=True  # ← ここが 'true' から True になりました
+        )
         st.session_state["google_auth_state"] = state
         
-        # ★★★ ここが診断用のコードです ★★★
-        st.warning("お手数ですが、以下のURLをコピーし、ブラウザの新しいタブに貼り付けてログインしてください。")
-        st.code(authorization_url)
+        # そして、表示方法は、最もシンプルで確実な、ただのリンクに戻します。
+        st.markdown(f"**[🗝️ Googleアカウントでログイン]({authorization_url})**")
 
     else:
         st.success("✅ ログイン中")
@@ -131,7 +137,7 @@ with st.sidebar:
 # --- メインコンテンツ ---
 if "google_user_info" not in st.session_state:
     st.header("ようこそ、AIアシスタント・ポータルへ！")
-    st.info("👆 サイドバーの指示に従って、ログインしてください。")
+    st.info("👆 サイドバーにある「🗝️ Googleアカウントでログイン」リンクをクリックして、旅を始めましょう！")
 else:
     tool_choice = st.session_state.get("tool_choice_radio")
     st.header(f"{tool_choice}")
