@@ -1,21 +1,18 @@
-# app.py (メインの司令塔ファイル)
-
 import streamlit as st
 import json
 from google_auth_oauthlib.flow import Flow
 from google.oauth2.credentials import Credentials
-import gspread
 import requests
 import traceback
 import time
+from streamlit_local_storage import LocalStorage
 
-# ★★★ 変更点① ★★★
-# toolsフォルダから、専門家であるkoutsuhiモジュールをインポート
-from tools import koutsuhi
+# ★★★ 変更点①：専門家のインポート ★★★
+# toolsフォルダから、専門家であるkoutsuhiと、新しいcalendar_toolモジュールをインポート
+from tools import koutsuhi, calendar_tool
 
 # ===============================================================
 # 1. アプリの基本設定と、神聖なる金庫からの情報取得
-# (このセクションは元のコードから変更ありません)
 # ===============================================================
 st.set_page_config(page_title="AIアシスタント・ポータル", page_icon="🤖", layout="wide")
 
@@ -27,8 +24,9 @@ try:
         "openid",
         "https://www.googleapis.com/auth/userinfo.email", 
         "https://www.googleapis.com/auth/userinfo.profile",
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive.readonly"
+        # gspreadを使う場合は必要だが、現状は不要なためコメントアウト。将来の拡張性のために残す。
+        # "https://www.googleapis.com/auth/spreadsheets",
+        # "https://www.googleapis.com/auth/drive.readonly"
     ]
 except (KeyError, FileNotFoundError):
     st.error("重大なエラー: StreamlitのSecretsにGoogle認証情報が設定されていません。")
@@ -52,6 +50,7 @@ def google_logout():
     for key in keys_to_clear:
         st.session_state.pop(key, None)
     st.success("ログアウトしました。")
+    # ログアウト後にAPIキーもクリアした方が親切かもしれないが、利便性を考え一旦保持
     st.rerun()
 
 # ===============================================================
@@ -66,20 +65,7 @@ if "code" in st.query_params and "google_credentials" not in st.session_state:
         try:
             with st.spinner("Google認証処理中..."):
                 flow = get_google_auth_flow()
-                try:
-                    flow.fetch_token(code=st.query_params["code"])
-                except Exception as token_error:
-                    if "Scope has changed" in str(token_error):
-                        flow = Flow.from_client_config(
-                            client_config={ "web": { "client_id": CLIENT_ID, "client_secret": CLIENT_SECRET,
-                                                     "auth_uri": "https://accounts.google.com/o/oauth2/auth", "token_uri": "https://oauth2.googleapis.com/token",
-                                                     "redirect_uris": [REDIRECT_URI], }},
-                            scopes=None,
-                            redirect_uri=REDIRECT_URI
-                        )
-                        flow.fetch_token(code=st.query_params["code"])
-                    else:
-                        raise token_error
+                flow.fetch_token(code=st.query_params["code"])
                 
                 creds = flow.credentials
                 st.session_state["google_credentials"] = {
@@ -112,7 +98,6 @@ if "code" in st.query_params and "google_credentials" not in st.session_state:
 
 # ===============================================================
 # 4. UI描画
-# (このセクションが、私たちの主な変更箇所です)
 # ===============================================================
 with st.sidebar:
     st.title("🤖 AIアシスタント・ポータル")
@@ -129,33 +114,59 @@ with st.sidebar:
         if 'name' in user_info: st.markdown(f"**ユーザー:** {user_info['name']}")
         if 'email' in user_info: st.markdown(f"**メール:** {user_info['email']}")
         if st.button("🔑 ログアウト", use_container_width=True): google_logout()
-    
+
     st.divider()
+    
+    # ログイン後にツール選択とAPIキー設定を表示
+    if "google_user_info" in st.session_state:
+        tool_options = ("📅 カレンダー登録", "🚇 AI乗り換え案内", "💹 価格リサーチ", "📝 議事録作成")
+        tool_choice = st.radio("使いたいツールを選んでください:", tool_options, key="tool_choice_radio")
+        
+        st.divider()
+        st.header("⚙️ APIキー設定")
+        
+        # ★★★ 変更点②：「成功コード」のAPIキー管理機能をここに復活 ★★★
+        localS = LocalStorage()
+        saved_keys = localS.getItem("api_keys")
+        gemini_default = saved_keys.get('gemini', '') if isinstance(saved_keys, dict) else ""
+        speech_default = saved_keys.get('speech', '') if isinstance(saved_keys, dict) else ""
+
+        gemini_api_key = st.text_input("1. Gemini APIキー", type="password", value=gemini_default, help="Google AI Studioで取得したキー")
+        speech_api_key = st.text_input("2. Speech-to-Text APIキー", type="password", value=speech_default, help="Google Cloud Platformで取得したキー")
+
+        if st.button("APIキーをこのブラウザに保存する"):
+            localS.setItem("api_keys", {"gemini": gemini_api_key, "speech": speech_api_key})
+            st.success("キーを保存しました！")
+        
+        st.markdown("""
+        <div style="font-size: 0.9em;">
+        <a href="https://aistudio.google.com/app/apikey" target="_blank">1. Gemini APIキーの取得</a><br>
+        <a href="https://console.cloud.google.com/apis/credentials" target="_blank">2. Speech-to-Text APIキーの取得</a>
+        </div>
+        """, unsafe_allow_html=True)
+
 
 # --- メインコンテンツ ---
 if "google_user_info" not in st.session_state:
     st.header("ようこそ、AIアシスタント・ポータルへ！")
     st.info("👆 サイドバーにある「🗝️ Googleアカウントでログイン」ボタンを押して、旅を始めましょう！")
 else:
-    # ★★★ 変更点② ★★★
-    # ユーザーに見せるツールの名前リストを最新版に更新
-    tool_options = ("🚇 AI乗り換え案内", "📅 カレンダー登録", "💹 価格リサーチ", "📝 議事録作成")
-    with st.sidebar:
-        # この部分はログイン後に表示される
-        tool_choice = st.radio("使いたいツールを選んでください:", tool_options, disabled=False)
+    # st.session_stateからツール選択を取得
+    tool_choice = st.session_state.get("tool_choice_radio")
     
     st.header(f"{tool_choice}")
     st.divider()
 
-    # ★★★ 変更点③ (最も重要な変更) ★★★
-    # ユーザーの選択に応じて、専門家の仕事を呼び出す
+    # ★★★ 変更点③：ユーザーの選択に応じて、専門家の仕事を呼び出す ★★★
     if tool_choice == "🚇 AI乗り換え案内":
         # 「AI乗り換え案内」が選ばれたら、koutsuhiモジュールのshow_tool関数を実行
+        # (注：koutsuhi.pyも今後APIキーを受け取るように修正が必要です)
         koutsuhi.show_tool()
     
-    # 今後、他のツールもここに追加していく
-    # elif tool_choice == "📅 カレンダー登録":
-    #     calendar_tool.show_tool() # 例
+    elif tool_choice == "📅 カレンダー登録":
+        # 「カレンダー登録」が選ばれたら、calendar_toolモジュールのshow_tool関数を実行
+        # その際、司令塔が管理しているAPIキーを引数として渡す
+        calendar_tool.show_tool(gemini_api_key=gemini_api_key, speech_api_key=speech_api_key)
     
     else:
         # まだ作られていないツールが選ばれた場合のメッセージ
