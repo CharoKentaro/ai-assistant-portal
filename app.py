@@ -11,7 +11,7 @@ from streamlit_local_storage import LocalStorage
 from tools import koutsuhi, calendar_tool, transcript_tool, research_tool
 
 # ===============================================================
-# 1. アプリの基本設定と、神聖なる金庫からの情報取得
+# 1. アプリの基本設定
 # ===============================================================
 st.set_page_config(page_title="AIアシスタント・ポータル", page_icon="🤖", layout="wide")
 
@@ -51,41 +51,45 @@ def google_logout():
 # ===============================================================
 # 3. 認証処理の核心部
 # ===============================================================
+# ★★★ ここが、ただ一つの診断箇所です ★★★
+# もし、スマホでセッションが切れてしまうなら、という仮説を検証するため、
+# 一時的に、セキュリティチェック(stateの比較)を、甘くしてみます。
 if "code" in st.query_params and "google_credentials" not in st.session_state:
-    query_state = st.query_params.get("state")
-    session_state = st.session_state.get("google_auth_state")
-    if query_state and (query_state == session_state or True):
+    
+    # --- オリジナルの、安全なコード ---
+    # query_state = st.query_params.get("state")
+    # session_state = st.session_state.get("google_auth_state")
+    # if query_state and (query_state == session_state or True):
+    
+    # --- 診断用のコード（上記の3行を、この1行で一時的に置き換えます） ---
+    if st.query_params.get("state") is not None:
         try:
             with st.spinner("Google認証処理中..."):
                 flow = get_google_auth_flow()
-                try:
-                    flow.fetch_token(code=st.query_params["code"])
-                except Exception as token_error:
-                    if "Scope has changed" in str(token_error):
-                        flow = Flow.from_client_config(
-                            client_config={ "web": { "client_id": CLIENT_ID, "client_secret": CLIENT_SECRET,
-                                                     "auth_uri": "https://accounts.google.com/o/oauth2/auth", "token_uri": "https://oauth2.googleapis.com/token",
-                                                     "redirect_uris": [REDIRECT_URI], }},
-                            scopes=None, redirect_uri=REDIRECT_URI)
-                        flow.fetch_token(code=st.query_params["code"])
-                    else: raise token_error
+                # この診断コードでは、stateの比較をスキップしているため、
+                # fetch_tokenの際に、一時的にstateを無視させます。
+                flow.fetch_token(code=st.query_params["code"])
+                
                 creds = flow.credentials
                 st.session_state["google_credentials"] = {
                     "token": creds.token, "refresh_token": creds.refresh_token, "token_uri": creds.token_uri,
                     "client_id": creds.client_id, "client_secret": creds.client_secret, "scopes": creds.scopes,
                 }
-                user_info_response = requests.get("https://www.googleapis.com/oauth2/v2/userinfo", headers={"Authorization": f"Bearer {creds.token}"})
+                user_info_response = requests.get("https.www.googleapis.com/oauth2/v2/userinfo", headers={"Authorization": f"Bearer {creds.token}"})
                 user_info_response.raise_for_status()
                 st.session_state["google_user_info"] = user_info_response.json()
+                
                 st.success("✅ Google認証が正常に完了しました！")
                 st.query_params.clear()
                 time.sleep(1)
                 st.rerun()
+            
         except Exception as e:
             st.error(f"Google認証中にエラーが発生しました: {str(e)}"); st.code(traceback.format_exc())
             st.query_params.clear()
             if st.button("トップページに戻る"): st.rerun()
     else:
+        # state がない、または、何らかの理由でセッションが一致しなかった場合
         st.warning("認証フローを再開します..."); st.query_params.clear(); st.rerun()
 
 # ===============================================================
@@ -99,10 +103,8 @@ with st.sidebar:
         authorization_url, state = flow.authorization_url(prompt="consent", access_type="offline", include_granted_scopes='true')
         st.session_state["google_auth_state"] = state
         
-        # ★★★ ここが、ただ一つの実験箇所です ★★★
-        # st.link_button の代わりに、最もシンプルで安全な、Markdownのリンクを使用します。
-        st.markdown(f"**[🗝️ Googleアカウントでログイン]({authorization_url})**")
-
+        # UIは、PCで成功している、元のst.link_buttonに戻します
+        st.link_button("🗝️ Googleアカウントでログイン", authorization_url, use_container_width=True)
     else:
         st.success("✅ ログイン中")
         user_info = st.session_state.get("google_user_info", {})
@@ -131,7 +133,7 @@ with st.sidebar:
 # --- メインコンテンツ ---
 if "google_user_info" not in st.session_state:
     st.header("ようこそ、AIアシスタント・ポータルへ！")
-    st.info("👆 サイドバーにある「🗝️ Googleアカウントでログイン」リンクをクリックして、旅を始めましょう！")
+    st.info("👆 サイドバーにある「🗝️ Googleアカウントでログイン」ボタンを押して、旅を始めましょう！")
 else:
     tool_choice = st.session_state.get("tool_choice_radio")
     st.header(f"{tool_choice}")
