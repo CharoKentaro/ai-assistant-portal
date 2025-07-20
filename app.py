@@ -8,8 +8,8 @@ import time
 from streamlit_local_storage import LocalStorage
 
 # ★★★ 変更点①：専門家のインポート ★★★
-# 新しい専門家である transcript_tool モジュールを追加でインポート
-from tools import koutsuhi, calendar_tool, transcript_tool
+# 最後の専門家である research_tool モジュールを追加でインポート
+from tools import koutsuhi, calendar_tool, transcript_tool, research_tool
 
 # ===============================================================
 # 1. アプリの基本設定と、神聖なる金庫からの情報取得
@@ -91,7 +91,7 @@ if "code" in st.query_params and "google_credentials" not in st.session_state:
         st.warning("認証フローを再開します..."); st.query_params.clear(); st.rerun()
 
 # ===============================================================
-# 4. UI描画 (変更なし)
+# 4. UI描画
 # ===============================================================
 with st.sidebar:
     st.title("🤖 AIアシスタント・ポータル")
@@ -109,8 +109,10 @@ with st.sidebar:
         if st.button("🔑 ログアウト", use_container_width=True): google_logout()
     st.divider()
     if "google_user_info" in st.session_state:
-        tool_options = ("📅 カレンダー登録", "📝 議事録作成", "🚇 AI乗り換え案内", "💹 価格リサーチ")
+        # ★★★ 変更点②：ツールリストの順番を「成功コード」に合わせる ★★★
+        tool_options = ("📅 カレンダー登録", "💹 価格リサーチ", "📝 議事録作成", "🚇 AI乗り換え案内")
         tool_choice = st.radio("使いたいツールを選んでください:", tool_options, key="tool_choice_radio")
+        
         st.divider()
         st.header("⚙️ APIキー設定")
         localS = LocalStorage()
@@ -133,14 +135,17 @@ else:
     st.header(f"{tool_choice}")
     st.divider()
 
-    # ★★★ 変更点②：新しい専門家を呼び出すロジックを追加 ★★★
+    # ★★★ 変更点③：最後の専門家を呼び出すロジックを追加 ★★★
     if tool_choice == "🚇 AI乗り換え案内":
+        # 今後の課題：このツールもAPIキーを受け取るように改修が必要
         koutsuhi.show_tool()
     elif tool_choice == "📅 カレンダー登録":
         calendar_tool.show_tool(gemini_api_key=gemini_api_key, speech_api_key=speech_api_key)
     elif tool_choice == "📝 議事録作成":
-        # 「議事録作成」が選ばれたら、transcript_toolのshow_tool関数を呼び出す
-        # 必要なのはSpeech-to-Textのキーだけなので、それだけを渡す
         transcript_tool.show_tool(speech_api_key=speech_api_key)
+    elif tool_choice == "💹 価格リサーチ":
+        # 「価格リサーチ」が選ばれたら、research_toolのshow_tool関数を呼び出す
+        research_tool.show_tool(gemini_api_key=gemini_api_key)
     else:
+        # このelseは、もはや到達不能だが、安全のために残しておく
         st.warning(f"ツール「{tool_choice}」は現在、新しい認証システムへの移行作業中です。")
