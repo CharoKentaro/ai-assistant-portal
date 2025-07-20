@@ -94,7 +94,7 @@ def show_tool():
                 with st.spinner(f"「{origin}」から「{destination}」へのルートを検索中..."):
                     try:
                         gmaps = googlemaps.Client(key=user_api_key)
-                        directions_result = gmaps.directions(origin, destination, mode="driving")
+                        directions_result = gmaps.directions(origin, destination, mode="driving",region="JP")
                         
                         if directions_result:
                             leg = directions_result[0]['legs'][0]
