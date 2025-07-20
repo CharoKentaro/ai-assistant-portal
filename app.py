@@ -33,6 +33,7 @@ except (KeyError, FileNotFoundError):
 # 2. ログイン/ログアウト関数
 # ===============================================================
 def get_google_auth_flow():
+    # 「認証が成功したコード」の形を、完全に、維持します
     return Flow.from_client_config(
         client_config={ "web": { "client_id": CLIENT_ID, "client_secret": CLIENT_SECRET,
                                  "auth_uri": "https://accounts.google.com/o/oauth2/auth", "token_uri": "https://oauth2.googleapis.com/token",
@@ -66,12 +67,10 @@ if "code" in st.query_params and "google_credentials" not in st.session_state:
                             client_config={ "web": { "client_id": CLIENT_ID, "client_secret": CLIENT_SECRET,
                                                      "auth_uri": "https://accounts.google.com/o/oauth2/auth", "token_uri": "https://oauth2.googleapis.com/token",
                                                      "redirect_uris": [REDIRECT_URI], }},
-                            scopes=None,
-                            redirect_uri=REDIRECT_URI
+                            scopes=None, redirect_uri=REDIRECT_URI
                         )
                         flow.fetch_token(code=st.query_params["code"])
-                    else:
-                        raise token_error
+                    else: raise token_error
                 creds = flow.credentials
                 st.session_state["google_credentials"] = { "token": creds.token, "refresh_token": creds.refresh_token, "token_uri": creds.token_uri, "client_id": creds.client_id, "client_secret": creds.client_secret, "scopes": creds.scopes }
                 user_info_response = requests.get("https://www.googleapis.com/oauth2/v2/userinfo", headers={"Authorization": f"Bearer {creds.token}"})
@@ -106,19 +105,43 @@ with st.sidebar:
         tool_options = ("📅 カレンダー登録", "💹 価格リサーチ", "📝 議事録作成", "🚇 AI乗り換え案内")
         tool_choice = st.radio("使いたいツールを選んでください:", tool_options, key="tool_choice_radio")
         st.divider()
-        st.header("⚙️ APIキー設定")
+        
+        # ★★★ ここが、最後の、そして、最も、美しい、修正箇所です ★★★
         
         localS = LocalStorage()
         saved_keys = localS.getItem("api_keys")
         gemini_default = saved_keys.get('gemini', '') if isinstance(saved_keys, dict) else ""
         speech_default = saved_keys.get('speech', '') if isinstance(saved_keys, dict) else ""
         
-        st.session_state.gemini_api_key = st.text_input("1. Gemini APIキー", type="password", value=st.session_state.get('gemini_api_key', gemini_default), help="Google AI Studioで取得したキー")
-        st.session_state.speech_api_key = st.text_input("2. Speech-to-Text APIキー", type="password", value=st.session_state.get('speech_api_key', speech_default), help="Google Cloud Platformで取得したキー")
-        
-        if st.button("APIキーをこのブラウザに保存する"):
+        if 'gemini_api_key' not in st.session_state:
+            st.session_state.gemini_api_key = gemini_default
+        if 'speech_api_key' not in st.session_state:
+            st.session_state.speech_api_key = speech_default
+
+        with st.expander("⚙️ APIキーの表示と再設定", expanded=not(st.session_state.gemini_api_key and st.session_state.speech_api_key)):
+            with st.form("api_key_form", clear_on_submit=False):
+                st.session_state.gemini_api_key = st.text_input("1. Gemini APIキー", type="password", value=st.session_state.gemini_api_key)
+                st.session_state.speech_api_key = st.text_input("2. Speech-to-Text APIキー", type="password", value=st.session_state.speech_api_key)
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    save_button = st.form_submit_button("💾 保存", use_container_width=True)
+                with col2:
+                    reset_button = st.form_submit_button("🔄 クリア", use_container_width=True)
+
+        if save_button:
             localS.setItem("api_keys", {"gemini": st.session_state.gemini_api_key, "speech": st.session_state.speech_api_key})
             st.success("キーを保存しました！")
+            time.sleep(1)
+            st.rerun()
+        
+        if reset_button:
+            localS.setItem("api_keys", None)
+            st.session_state.gemini_api_key = ""
+            st.session_state.speech_api_key = ""
+            st.success("キーをクリアしました。")
+            time.sleep(1)
+            st.rerun()
         
         st.markdown("""<div style="font-size: 0.9em;"><a href="https://aistudio.google.com/app/apikey" target="_blank">1. Gemini APIキーの取得</a><br><a href="https://console.cloud.google.com/apis/credentials" target="_blank">2. Speech-to-Text APIキーの取得</a></div>""", unsafe_allow_html=True)
 
@@ -134,7 +157,6 @@ else:
     gemini_api_key = st.session_state.get('gemini_api_key', '')
     speech_api_key = st.session_state.get('speech_api_key', '')
 
-    # ★★★ ここが、最後の、そして、唯一の、修正箇所です ★★★
     if tool_choice == "🚇 AI乗り換え案内":
         koutsuhi.show_tool(gemini_api_key=gemini_api_key)
     elif tool_choice == "📅 カレンダー登録":
