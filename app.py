@@ -99,10 +99,10 @@ with st.sidebar:
         authorization_url, state = flow.authorization_url(prompt="consent", access_type="offline", include_granted_scopes='true')
         st.session_state["google_auth_state"] = state
         
-        # ★★★ ここが唯一の修正箇所です ★★★
-        # st.link_buttonの代わりに、st.markdownを使い、現在のタブで開く(target="_self")リンクを生成します。
-        # これにより、スマホのポップアップブロック機能を確実に回避します。
-        st.markdown(f'<a href="{authorization_url}" target="_self" style="display: inline-block; padding: 0.5em 1em; background-color: #FF4B4B; color: white; text-decoration: none; border-radius: 0.25rem; width: 95%; text-align: center;">🗝️ Googleアカウントでログイン</a>', unsafe_allow_html=True)
+        # ★★★ ここが唯一の、そして最終の修正箇所です ★★★
+        # target="_top" を指定することで、ブラウザのウィンドウ全体を書き換えてログインページを開きます。
+        # これが、PCの「接続拒否」とスマホの「ポップアップブロック」の両方を解決する、唯一の方法です。
+        st.markdown(f'<a href="{authorization_url}" target="_top" style="display: inline-block; padding: 0.5em 1em; background-color: #FF4B4B; color: white; text-decoration: none; border-radius: 0.25rem; width: 95%; text-align: center;">🗝️ Googleアカウントでログイン</a>', unsafe_allow_html=True)
 
     else:
         st.success("✅ ログイン中")
