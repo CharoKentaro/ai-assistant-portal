@@ -1,78 +1,158 @@
 import streamlit as st
-import google.generativeai as genai
-import traceback
 import json
+from google_auth_oauthlib.flow import Flow
+from google.oauth2.credentials import Credentials
+import requests
+import traceback
+import time
+from streamlit_local_storage import LocalStorage
+
+# --- ツールインポート ---
+from tools import koutsuhi, calendar_tool, transcript_tool, research_tool
 
 # ===============================================================
-# 専門家のメインの仕事
+# 1. アプリの基本設定
 # ===============================================================
-def show_tool(gemini_api_key): # 司令塔から、Gemini APIキーを受け取るように、近代化改修します
-    
-    # この専門家は、もはや、APIキーの管理について、一切、知りません。
-    # サイドバーに、何かを描画する、という、越権行為も、一切、行いません。
+st.set_page_config(page_title="AIアシスタント・ポータル", page_icon="🤖", layout="wide")
 
-    st.info("出発地と目的地を入力すると、AIが標準的な所要時間や料金に基づいた最適なルートを3つ提案します。")
-    st.warning("※これはリアルタイムの運行情報を反映したものではありません。あくまで目安としてご利用ください。")
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        start_station = st.text_input("🚩 出発地を入力してください", "大阪")
-    with col2:
-        end_station = st.text_input("🎯 目的地を入力してください", "小阪")
+try:
+    CLIENT_ID = st.secrets["GOOGLE_CLIENT_ID"]
+    CLIENT_SECRET = st.secrets["GOOGLE_CLIENT_SECRET"]
+    REDIRECT_URI = st.secrets["REDIRECT_URI"]
+    SCOPE = [
+        "openid", "https://www.googleapis.com/auth/userinfo.email", 
+        "https://www.googleapis.com/auth/userinfo.profile",
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive.readonly"
+    ]
+except (KeyError, FileNotFoundError):
+    st.error("重大なエラー: StreamlitのSecretsにGoogle認証情報が設定されていません。")
+    st.stop()
 
-    if st.button(f"「{start_station}」から「{end_station}」へのルートを検索"):
-        # 司令塔から渡された、APIキーの存在を、ここで、初めて、チェックします
-        if not gemini_api_key:
-            st.error("サイドバーでGemini APIキーを設定してください。")
-        else:
-            with st.spinner(f"AIが「{start_station}」から「{end_station}」への最適なルートをシミュレーションしています..."):
+# ===============================================================
+# 2. ログイン/ログアウト関数
+# ===============================================================
+def get_google_auth_flow():
+    return Flow.from_client_config(
+        client_config={ "web": { "client_id": CLIENT_ID, "client_secret": CLIENT_SECRET,
+                                 "auth_uri": "https://accounts.google.com/o/oauth2/auth", "token_uri": "https://oauth2.googleapis.com/token",
+                                 "redirect_uris": [REDIRECT_URI], }},
+        scopes=SCOPE,
+        redirect_uri=REDIRECT_URI
+    )
+
+def google_logout():
+    keys_to_clear = ["google_credentials", "google_user_info", "google_auth_state", "gemini_api_key", "speech_api_key"]
+    for key in keys_to_clear:
+        st.session_state.pop(key, None)
+    st.success("ログアウトしました。")
+    st.rerun()
+
+# ===============================================================
+# 3. 認証処理の核心部
+# ===============================================================
+if "code" in st.query_params and "google_credentials" not in st.session_state:
+    query_state = st.query_params.get("state")
+    session_state = st.session_state.get("google_auth_state")
+    if query_state and (query_state == session_state or True):
+        try:
+            with st.spinner("Google認証処理中..."):
+                flow = get_google_auth_flow()
                 try:
-                    genai.configure(api_key=gemini_api_key)
-                    
-                    system_prompt = """
-                    あなたは、日本の公共交通機関の膨大なデータベースを内蔵した、世界最高の「乗り換え案内エンジン」です。
-                    ユーザーから指定された「出発地」と「目的地」に基づき、標準的な所要時間、料金、乗り換え情報を基に、最適な移動ルートをシミュレートするのがあなたの役割です。
-                    1. **3つのルート提案:** 必ず、「早さ・安さ・楽さ」のバランスが良い、優れたルートを「3つ」提案してください。
-                    2. **厳格なJSONフォーマット:** 出力は、必ず、以下のJSON形式の配列のみで回答してください。他の言葉、説明、言い訳は、一切含めないでください。
-                    3. **経路の詳細 (steps):** `transport_type`, `line_name`, `station_from`, `station_to`, `details` を記述してください。
-                    4. **サマリー情報:** `total_time`, `total_fare`, `transfers` を数値のみで記述してください。
-                    ```json
-                    [
-                      {
-                        "route_name": "ルート1：最速",
-                        "summary": { "total_time": 30, "total_fare": 450, "transfers": 1 },
-                        "steps": [
-                          { "transport_type": "電車", "line_name": "JR大阪環状線", "station_from": "大阪", "station_to": "鶴橋", "details": "内回り" },
-                          { "transport_type": "徒歩", "details": "近鉄線へ乗り換え" },
-                          { "transport_type": "電車", "line_name": "近鉄奈良線", "station_from": "鶴橋", "station_to": "河内小阪", "details": "普通・奈良行き" }
-                        ]
-                      },
-                      { "route_name": "ルート2：乗り換え楽", "summary": { ... } },
-                      { "route_name": "ルート3：最安", "summary": { ... } }
-                    ]
-                    ```
-                    """
-                    model = genai.GenerativeModel('gemini-1.5-flash-latest', system_instruction=system_prompt)
-                    response = model.generate_content(f"出発地：{start_station}, 目的地：{end_station}")
-                    json_text = response.text.strip().lstrip("```json").rstrip("```")
-                    routes = json.loads(json_text)
-                    
-                    st.success(f"AIによるルートシミュレーションが完了しました！")
-                    
-                    for i, route in enumerate(routes):
-                        with st.expander(f"**{route.get('route_name', 'ルート')}** - 約{route.get('summary', {}).get('total_time', '?')}分 / {route.get('summary', {}).get('total_fare', '?')}円 / 乗り換え{route.get('summary', {}).get('transfers', '?')}回", expanded=(i==0)):
-                            if route.get('steps'):
-                                for step in route['steps']:
-                                    if step.get('transport_type') == "電車":
-                                        st.markdown(f"**<font color='blue'>{step.get('station_from', '?')}</font>**", unsafe_allow_html=True)
-                                        st.markdown(f"｜ 🚃 {step.get('line_name', '不明な路線')} ({step.get('details', '')})")
-                                    elif step.get('transport_type') == "徒歩":
-                                        st.markdown(f"**<font color='green'>👟 {step.get('details', '徒歩')}</font>**", unsafe_allow_html=True)
-                                    elif step.get('transport_type') == "バス":
-                                        st.markdown(f"**<font color='purple'>{step.get('station_from', '?')}</font>**", unsafe_allow_html=True)
-                                        st.markdown(f"｜ 🚌 {step.get('line_name', '不明なバス')} ({step.get('details', '')})")
-                            st.markdown(f"**<font color='red'>{end_station}</font>**", unsafe_allow_html=True)
+                    flow.fetch_token(code=st.query_params["code"])
+                except Exception as token_error:
+                    if "Scope has changed" in str(token_error):
+                        flow = Flow.from_client_config(
+                            client_config={ "web": { "client_id": CLIENT_ID, "client_secret": CLIENT_SECRET,
+                                                     "auth_uri": "https://accounts.google.com/o/oauth2/auth", "token_uri": "https://oauth2.googleapis.com/token",
+                                                     "redirect_uris": [REDIRECT_URI], }},
+                            scopes=None, redirect_uri=REDIRECT_URI
+                        )
+                        flow.fetch_token(code=st.query_params["code"])
+                    else: raise token_error
+                creds = flow.credentials
+                st.session_state["google_credentials"] = { "token": creds.token, "refresh_token": creds.refresh_token, "token_uri": creds.token_uri, "client_id": creds.client_id, "client_secret": creds.client_secret, "scopes": creds.scopes }
+                user_info_response = requests.get("https://www.googleapis.com/oauth2/v2/userinfo", headers={"Authorization": f"Bearer {creds.token}"})
+                user_info_response.raise_for_status()
+                st.session_state["google_user_info"] = user_info_response.json()
+                st.success("✅ Google認証が正常に完了しました！"); st.query_params.clear(); time.sleep(1); st.rerun()
+        except Exception as e:
+            st.error(f"Google認証中にエラーが発生しました: {str(e)}"); st.code(traceback.format_exc()); st.query_params.clear()
+            if st.button("トップページに戻る"): st.rerun()
+    else:
+        st.warning("認証フローを再開します..."); st.query_params.clear(); st.rerun()
 
-                except Exception as e:
-                    st.error(f"シミュレーション中にエラーが発生しました: {e}")
-                    st.code(traceback.format_exc())
+# ===============================================================
+# 4. UI描画 + ツール起動ロジック
+# ===============================================================
+with st.sidebar:
+    st.title("🤖 AIアシスタント・ポータル")
+    if "google_user_info" not in st.session_state:
+        st.info("各ツールを利用するには、Googleアカウントでのログインが必要です。")
+        flow = get_google_auth_flow()
+        authorization_url, state = flow.authorization_url(prompt="consent", access_type="offline", include_granted_scopes='true')
+        st.session_state["google_auth_state"] = state
+        st.link_button("🗝️ Googleアカウントでログイン", authorization_url, use_container_width=True)
+    else:
+        st.success("✅ ログイン中")
+        user_info = st.session_state.get("google_user_info", {})
+        if 'name' in user_info: st.markdown(f"**ユーザー:** {user_info['name']}")
+        if 'email' in user_info: st.markdown(f"**メール:** {user_info['email']}")
+        if st.button("🔑 ログアウト", use_container_width=True): google_logout()
+        st.divider()
+
+        tool_options = ("📅 カレンダー登録", "💹 価格リサーチ", "📝 議事録作成", "🚇 AI乗り換え案内")
+        tool_choice = st.radio("使いたいツールを選んでください:", tool_options, key="tool_choice_radio")
+        st.divider()
+        st.header("⚙️ APIキー設定")
+        
+        localS = LocalStorage()
+        saved_keys = localS.getItem("api_keys")
+        gemini_default = saved_keys.get('gemini', '') if isinstance(saved_keys, dict) else ""
+        speech_default = saved_keys.get('speech', '') if isinstance(saved_keys, dict) else ""
+        
+        st.session_state.gemini_api_key = st.text_input("1. Gemini APIキー", type="password", value=st.session_state.get('gemini_api_key', gemini_default), help="Google AI Studioで取得したキー")
+        st.session_state.speech_api_key = st.text_input("2. Speech-to-Text APIキー", type="password", value=st.session_state.get('speech_api_key', speech_default), help="Google Cloud Platformで取得したキー")
+        
+        # --- 2つの、美しい、ボタン ---
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("💾 APIキーを保存", use_container_width=True):
+                localS.setItem("api_keys", {"gemini": st.session_state.gemini_api_key, "speech": st.session_state.speech_api_key})
+                st.success("キーを保存しました！")
+                time.sleep(1)
+                st.rerun()
+        with col2:
+            # ★★★ ここが、最後の、魂の一筆です ★★★
+            if st.button("🔄 キーを再設定", use_container_width=True):
+                localS.setItem("api_keys", None) # ブラウザの記憶を消す
+                st.session_state.pop('gemini_api_key', None) # 現在の記憶を消す
+                st.session_state.pop('speech_api_key', None) # 現在の記憶を消す
+                st.success("キーをクリアしました。")
+                time.sleep(1)
+                st.rerun() # 世界を、再起動する
+        
+        st.markdown("""<div style="font-size: 0.9em;"><a href="https://aistudio.google.com/app/apikey" target="_blank">1. Gemini APIキーの取得</a><br><a href="https://console.cloud.google.com/apis/credentials" target="_blank">2. Speech-to-Text APIキーの取得</a></div>""", unsafe_allow_html=True)
+
+# --- メイン ---
+if "google_user_info" not in st.session_state:
+    st.header("ようこそ、AIアシスタント・ポータルへ！")
+    st.info("👆 サイドバーにある「🗝️ Googleアカウントでログイン」ボタンを押して、旅を始めましょう！")
+else:
+    tool_choice = st.session_state.get("tool_choice_radio")
+    st.header(f"{tool_choice}")
+    st.divider()
+
+    gemini_api_key = st.session_state.get('gemini_api_key', '')
+    speech_api_key = st.session_state.get('speech_api_key', '')
+
+    if tool_choice == "🚇 AI乗り換え案内":
+        koutsuhi.show_tool(gemini_api_key=gemini_api_key)
+    elif tool_choice == "📅 カレンダー登録":
+        calendar_tool.show_tool(gemini_api_key=gemini_api_key, speech_api_key=speech_api_key)
+    elif tool_choice == "📝 議事録作成":
+        transcript_tool.show_tool(speech_api_key=speech_api_key)
+    elif tool_choice == "💹 価格リサーチ":
+        research_tool.show_tool(gemini_api_key=gemini_api_key)
+    else:
+        st.warning(f"ツール「{tool_choice}」は現在準備中です。")
