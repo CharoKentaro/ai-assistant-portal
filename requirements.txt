@@ -10,3 +10,4 @@ pytz
 googlemaps
 streamlit-local-storage
 google-generativeai
+google-cloud-speech
