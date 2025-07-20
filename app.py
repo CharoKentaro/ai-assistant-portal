@@ -33,12 +33,12 @@ except (KeyError, FileNotFoundError):
 # 2. ログイン/ログアウト関数
 # ===============================================================
 def get_google_auth_flow():
+    # 修正①：リクエストを無効にしていた、冗長なredirect_uriパラメータを削除
     return Flow.from_client_config(
         client_config={ "web": { "client_id": CLIENT_ID, "client_secret": CLIENT_SECRET,
                                  "auth_uri": "https://accounts.google.com/o/oauth2/auth", "token_uri": "https://oauth2.googleapis.com/token",
                                  "redirect_uris": [REDIRECT_URI], }},
-        scopes=SCOPE,
-        redirect_uri=REDIRECT_URI
+        scopes=SCOPE
     )
 
 def google_logout():
@@ -51,23 +51,13 @@ def google_logout():
 # ===============================================================
 # 3. 認証処理の核心部
 # ===============================================================
-# ★★★ ここが、ただ一つの診断箇所です ★★★
-# もし、スマホでセッションが切れてしまうなら、という仮説を検証するため、
-# 一時的に、セキュリティチェック(stateの比較)を、甘くしてみます。
 if "code" in st.query_params and "google_credentials" not in st.session_state:
-    
-    # --- オリジナルの、安全なコード ---
-    # query_state = st.query_params.get("state")
-    # session_state = st.session_state.get("google_auth_state")
-    # if query_state and (query_state == session_state or True):
-    
-    # --- 診断用のコード（上記の3行を、この1行で一時的に置き換えます） ---
-    if st.query_params.get("state") is not None:
+    query_state = st.query_params.get("state")
+    session_state = st.session_state.get("google_auth_state")
+    if query_state and (query_state == session_state): # or True を削除し、セキュリティを本来の姿に
         try:
             with st.spinner("Google認証処理中..."):
                 flow = get_google_auth_flow()
-                # この診断コードでは、stateの比較をスキップしているため、
-                # fetch_tokenの際に、一時的にstateを無視させます。
                 flow.fetch_token(code=st.query_params["code"])
                 
                 creds = flow.credentials
@@ -75,7 +65,12 @@ if "code" in st.query_params and "google_credentials" not in st.session_state:
                     "token": creds.token, "refresh_token": creds.refresh_token, "token_uri": creds.token_uri,
                     "client_id": creds.client_id, "client_secret": creds.client_secret, "scopes": creds.scopes,
                 }
-                user_info_response = requests.get("https.www.googleapis.com/oauth2/v2/userinfo", headers={"Authorization": f"Bearer {creds.token}"})
+
+                # 修正③：私の致命的なタイプミスを修正 ("https." -> "https://")
+                user_info_response = requests.get(
+                    "https://www.googleapis.com/oauth2/v2/userinfo", 
+                    headers={"Authorization": f"Bearer {creds.token}"}
+                )
                 user_info_response.raise_for_status()
                 st.session_state["google_user_info"] = user_info_response.json()
                 
@@ -89,8 +84,7 @@ if "code" in st.query_params and "google_credentials" not in st.session_state:
             st.query_params.clear()
             if st.button("トップページに戻る"): st.rerun()
     else:
-        # state がない、または、何らかの理由でセッションが一致しなかった場合
-        st.warning("認証フローを再開します..."); st.query_params.clear(); st.rerun()
+        st.warning("認証フローの有効期限が切れました。再度お試しください。"); st.query_params.clear(); time.sleep(2); st.rerun()
 
 # ===============================================================
 # 4. UI描画
@@ -100,11 +94,18 @@ with st.sidebar:
     if "google_user_info" not in st.session_state:
         st.info("各ツールを利用するには、Googleアカウントでのログインが必要です。")
         flow = get_google_auth_flow()
-        authorization_url, state = flow.authorization_url(prompt="consent", access_type="offline", include_granted_scopes='true')
+        
+        # 修正②：'true' という文字列ではなく、True という真偽値を渡す
+        authorization_url, state = flow.authorization_url(
+            prompt="consent", 
+            access_type="offline", 
+            include_granted_scopes=True
+        )
         st.session_state["google_auth_state"] = state
         
-        # UIは、PCで成功している、元のst.link_buttonに戻します
+        # UIは、PCで成功していた、元のst.link_buttonに戻します
         st.link_button("🗝️ Googleアカウントでログイン", authorization_url, use_container_width=True)
+
     else:
         st.success("✅ ログイン中")
         user_info = st.session_state.get("google_user_info", {})
