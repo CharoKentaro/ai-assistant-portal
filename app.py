@@ -7,7 +7,7 @@ import gspread
 import requests
 import traceback
 import time
-from tools import koutsuhi 
+from tools import koutsuhi
 
 # ===============================================================
 # 1. アプリの基本設定と、神聖なる金庫からの情報取得
@@ -189,16 +189,15 @@ if "google_user_info" not in st.session_state:
     st.header("ようこそ、AIアシスタント・ポータルへ！")
     st.info("👆 サイドバーにある「🗝️ Googleアカウントでログイン」ボタンを押して、旅を始めましょう！")
 else:
-    tool_options = ("🚙 交通費自動計算", "📅 カレンダー登録", "💹 価格リサーチ", "📝 議事録作成", "🚇 AI乗り換え案内")
+    tool_options = ("🚇 AI乗り換え案内", "📅 カレンダー登録", "💹 価格リサーチ", "📝 議事録作成")
     with st.sidebar:
         tool_choice = st.radio("使いたいツールを選んでください:", tool_options, disabled=False)
     
     st.header(f"{tool_choice}")
     st.divider()
 
-    if tool_choice == "🚙 交通費自動計算":
-        st.success("ようこそ！ 認証システムは、ついに、正常に稼働しました。")
-        st.info("このツールは現在、PoC（技術実証）段階です。")
+    if tool_choice == "🚇 AI乗り換え案内":
+    koutsuhi.show_tool()
         
         try:
             creds = Credentials(**st.session_state["google_credentials"])
