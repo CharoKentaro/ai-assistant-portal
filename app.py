@@ -7,7 +7,7 @@ import gspread
 import requests
 import traceback
 import time
-from tools import kyorisanshutsu 
+from tools import koutsuhi 
 
 # ===============================================================
 # 1. アプリの基本設定と、神聖なる金庫からの情報取得
