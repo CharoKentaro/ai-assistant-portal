@@ -5,8 +5,7 @@ from google.oauth2.credentials import Credentials
 import requests
 import traceback
 import time
-# LocalStorageを、あるべき場所で呼び出します
-from streamlit_local_storage import LocalStorage 
+from streamlit_local_storage import LocalStorage
 
 # --- 専門家のインポート ---
 from tools import koutsuhi, calendar_tool, transcript_tool, research_tool
@@ -34,17 +33,17 @@ except (KeyError, FileNotFoundError):
 # 2. ログイン/ログアウト関数
 # ===============================================================
 def get_google_auth_flow():
-    # 私たちの戦いで得た、唯一の修正を、ここに反映します
+    # 【修正②】私の誤った削除を元に戻し、redirect_uriを、あるべき場所へ
     return Flow.from_client_config(
         client_config={ "web": { "client_id": CLIENT_ID, "client_secret": CLIENT_SECRET,
                                  "auth_uri": "https://accounts.google.com/o/oauth2/auth", "token_uri": "https://oauth2.googleapis.com/token",
                                  "redirect_uris": [REDIRECT_URI], }},
-        scopes=SCOPE
+        scopes=SCOPE,
+        redirect_uri=REDIRECT_URI
     )
 
 def google_logout():
     keys_to_clear = ["google_credentials", "google_user_info", "google_auth_state"]
-    # 念のため、セッションステートのAPIキーもクリアします
     st.session_state.pop('gemini_api_key', None)
     st.session_state.pop('speech_api_key', None)
     for key in keys_to_clear:
@@ -58,7 +57,6 @@ def google_logout():
 if "code" in st.query_params and "google_credentials" not in st.session_state:
     query_state = st.query_params.get("state")
     session_state = st.session_state.get("google_auth_state")
-    # セキュリティを、本来のあるべき姿に戻します
     if query_state and (query_state == session_state):
         try:
             with st.spinner("Google認証処理中..."):
@@ -69,7 +67,7 @@ if "code" in st.query_params and "google_credentials" not in st.session_state:
                     "token": creds.token, "refresh_token": creds.refresh_token, "token_uri": creds.token_uri,
                     "client_id": creds.client_id, "client_secret": creds.client_secret, "scopes": creds.scopes,
                 }
-                # 私たちの戦いで得た、もう一つの修正を、ここに反映します
+                # 【修正④】私のタイプミスを修正
                 user_info_response = requests.get(
                     "https://www.googleapis.com/oauth2/v2/userinfo", 
                     headers={"Authorization": f"Bearer {creds.token}"}
@@ -95,7 +93,7 @@ with st.sidebar:
     if "google_user_info" not in st.session_state:
         st.info("各ツールを利用するには、Googleアカウントでのログインが必要です。")
         flow = get_google_auth_flow()
-        # 私たちの戦いで得た、最後の修正を、ここに反映します
+        # 【修正③】'true' ではなく、True を渡す
         authorization_url, state = flow.authorization_url(
             prompt="consent", 
             access_type="offline", 
@@ -112,8 +110,7 @@ with st.sidebar:
     
     st.divider()
 
-    # ★★★ 私たちの勝利の鍵 ★★★
-    # ログインが成功したユーザーにのみ、APIキー設定画面を表示します。
+    # 【修正①】勝利の鍵：ログイン後にのみ、LocalStorageを呼び出す
     if "google_user_info" in st.session_state:
         tool_options = ("📅 カレンダー登録", "💹 価格リサーチ", "📝 議事録作成", "🚇 AI乗り換え案内")
         tool_choice = st.radio("使いたいツールを選んでください:", tool_options, key="tool_choice_radio")
@@ -160,5 +157,4 @@ else:
     elif tool_choice == "💹 価格リサーチ":
         research_tool.show_tool(gemini_api_key=gemini_api_key)
     else:
-        # この部分は、もはや到達不能ですが、安全のために残します
         st.warning(f"ツール「{tool_choice}」は現在、新しい認証システムへの移行作業中です。")
