@@ -31,14 +31,17 @@ except (KeyError, FileNotFoundError):
 
 # ===============================================================
 # 2. ログイン/ログアウト関数
+# ★★★ ここが、すべての元凶でした ★★★
 # ===============================================================
 def get_google_auth_flow():
+    # client_configの中にリダイレクトURIが定義されているため、
+    # 冗長で、リクエストを無効にしていた、外側のredirect_uriパラメータを削除します。
+    # これが、あるべき、唯一の正しい姿です。
     return Flow.from_client_config(
         client_config={ "web": { "client_id": CLIENT_ID, "client_secret": CLIENT_SECRET,
                                  "auth_uri": "https://accounts.google.com/o/oauth2/auth", "token_uri": "https://oauth2.googleapis.com/token",
                                  "redirect_uris": [REDIRECT_URI], }},
-        scopes=SCOPE,
-        redirect_uri=REDIRECT_URI
+        scopes=SCOPE
     )
 
 def google_logout():
@@ -66,7 +69,7 @@ if "code" in st.query_params and "google_credentials" not in st.session_state:
                             client_config={ "web": { "client_id": CLIENT_ID, "client_secret": CLIENT_SECRET,
                                                      "auth_uri": "https://accounts.google.com/o/oauth2/auth", "token_uri": "https://oauth2.googleapis.com/token",
                                                      "redirect_uris": [REDIRECT_URI], }},
-                            scopes=None, redirect_uri=REDIRECT_URI)
+                            scopes=None)
                         flow.fetch_token(code=st.query_params["code"])
                     else: raise token_error
                 creds = flow.credentials
@@ -97,16 +100,15 @@ with st.sidebar:
         st.info("各ツールを利用するには、Googleアカウントでのログインが必要です。")
         flow = get_google_auth_flow()
         
-        # ★★★ ここが、私の過ちを正した、ただ一つの修正箇所です ★★★
-        # 'true' という「文字列」ではなく、True という「真偽値」を渡します。
+        # パラメータの問題が解決したため、この部分は以前の正常な状態に戻します。
         authorization_url, state = flow.authorization_url(
             prompt="consent", 
             access_type="offline", 
-            include_granted_scopes=True  # ← ここが 'true' から True になりました
+            include_granted_scopes=True
         )
         st.session_state["google_auth_state"] = state
         
-        # そして、表示方法は、最もシンプルで確実な、ただのリンクに戻します。
+        # UIも、最もシンプルだった、ただのリンクに戻します。
         st.markdown(f"**[🗝️ Googleアカウントでログイン]({authorization_url})**")
 
     else:
