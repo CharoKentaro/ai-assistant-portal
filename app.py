@@ -6,7 +6,6 @@ import requests
 import traceback
 import time
 from streamlit_local_storage import LocalStorage
-import streamlit.components.v1 as components
 
 # --- ツールインポート ---
 from tools import koutsuhi, calendar_tool, transcript_tool, research_tool
@@ -103,9 +102,7 @@ with st.sidebar:
         st.divider()
 
         tool_options = ("📅 カレンダー登録", "💹 価格リサーチ", "📝 議事録作成", "🚇 AI乗り換え案内")
-        
         st.radio("使いたいツールを選んでください:", tool_options, key="tool_choice_radio")
-
         st.divider()
         
         localS = LocalStorage()
@@ -148,6 +145,11 @@ else:
    
     gemini_api_key = st.session_state.get('gemini_api_key', '')
     speech_api_key = st.session_state.get('speech_api_key', '')
+    
+    # ★★★ ここが、最後の、そして、最も、美しい、UXの、革命です ★★★
+    st.header(f"{tool_choice}")
+    st.info("↓ 以下のツールをお使いいただけます。")
+    st.divider()
 
     if tool_choice == "🚇 AI乗り換え案内":
         koutsuhi.show_tool(gemini_api_key=gemini_api_key)
