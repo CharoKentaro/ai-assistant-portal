@@ -33,6 +33,7 @@ except (KeyError, FileNotFoundError):
 # 2. ログイン/ログアウト関数
 # ===============================================================
 def get_google_auth_flow():
+    # 「認証が成功したコード」の形を、完全に、維持します
     return Flow.from_client_config(
         client_config={ "web": { "client_id": CLIENT_ID, "client_secret": CLIENT_SECRET,
                                  "auth_uri": "https://accounts.google.com/o/oauth2/auth", "token_uri": "https://oauth2.googleapis.com/token",
@@ -102,8 +103,10 @@ with st.sidebar:
         st.divider()
 
         tool_options = ("📅 カレンダー登録", "💹 価格リサーチ", "📝 議事録作成", "🚇 AI乗り換え案内")
-        st.radio("使いたいツールを選んでください:", tool_options, key="tool_choice_radio")
+        tool_choice = st.radio("使いたいツールを選んでください:", tool_options, key="tool_choice_radio")
         st.divider()
+        
+        # ★★★ ここが、最後の、そして、最も、美しい、修正箇所です ★★★
         
         localS = LocalStorage()
         saved_keys = localS.getItem("api_keys")
@@ -128,11 +131,17 @@ with st.sidebar:
 
         if save_button:
             localS.setItem("api_keys", {"gemini": st.session_state.gemini_api_key, "speech": st.session_state.speech_api_key})
-            st.success("キーを保存しました！"); time.sleep(1); st.rerun()
+            st.success("キーを保存しました！")
+            time.sleep(1)
+            st.rerun()
         
         if reset_button:
-            localS.setItem("api_keys", None); st.session_state.gemini_api_key = ""; st.session_state.speech_api_key = ""
-            st.success("キーをクリアしました。"); time.sleep(1); st.rerun()
+            localS.setItem("api_keys", None)
+            st.session_state.gemini_api_key = ""
+            st.session_state.speech_api_key = ""
+            st.success("キーをクリアしました。")
+            time.sleep(1)
+            st.rerun()
         
         st.markdown("""<div style="font-size: 0.9em;"><a href="https://aistudio.google.com/app/apikey" target="_blank">1. Gemini APIキーの取得</a><br><a href="https://console.cloud.google.com/apis/credentials" target="_blank">2. Speech-to-Text APIキーの取得</a></div>""", unsafe_allow_html=True)
 
@@ -145,11 +154,6 @@ else:
    
     gemini_api_key = st.session_state.get('gemini_api_key', '')
     speech_api_key = st.session_state.get('speech_api_key', '')
-    
-    # ★★★ ここが、最後の、そして、最も、美しい、UXの、革命です ★★★
-    st.header(f"{tool_choice}")
-    st.info("↓ 以下のツールをお使いいただけます。")
-    st.divider()
 
     if tool_choice == "🚇 AI乗り換え案内":
         koutsuhi.show_tool(gemini_api_key=gemini_api_key)
