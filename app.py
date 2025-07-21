@@ -43,8 +43,7 @@ def get_google_auth_flow():
     )
 
 def google_logout():
-    keys_to_clear = ["google_credentials", "google_user_info", "google_auth_state", "gemini_api_key", "speech_api_key"]
-    st.session_state.pop('previous_tool_choice', None) # 見張り番の記憶もクリア
+    keys_to_clear = ["google_credentials", "google_user_info", "google_auth_state", "gemini_api_key", "speech_api_key", "previous_tool_choice"]
     for key in keys_to_clear:
         st.session_state.pop(key, None)
     st.success("ログアウトしました。")
@@ -111,30 +110,31 @@ with st.sidebar:
         tool_choice = st.radio("使いたいツールを選んでください:", tool_options, key="tool_choice_radio")
         
         if tool_choice != st.session_state.previous_tool_choice:
+            # ★★★ ここが、最後の、そして、最も、賢い、プロフェッショナルな、ロボットの、呪文です ★★★
             components.html(
                 """
                 <script>
-                // 賢く、そして、粘り強い、ロボットを、呼び出します
-                const closeSidebar = () => {
+                const tryCloseSidebar = () => {
+                    // 最も確実な「閉じるボタン」を探します
                     const closeButton = window.parent.document.querySelector('[data-testid="stSidebarCloseButton"]');
                     if (closeButton) {
                         closeButton.click();
                         return true; // 任務完了
                     }
-                    const mainContent = window.parent.document.querySelector('[data-testid="stAppViewContainer"]');
-                    if (mainContent) {
-                        mainContent.click();
-                        return true; // 任務完了
-                    }
                     return false; // まだ、的が見つからない
                 };
 
-                // 0.1秒後と、0.5秒後の、二段構えで、任務の、遂行を、試みます
-                setTimeout(() => {
-                    if (!closeSidebar()) {
-                        setTimeout(closeSidebar, 400);
+                // 0.05秒ごとに、粘り強く、探し続けます
+                const intervalId = setInterval(() => {
+                    if (tryCloseSidebar()) {
+                        clearInterval(intervalId); // 成功したら、自分を消滅させる
                     }
-                }, 100);
+                }, 50);
+
+                // 2秒経っても、成功しなかった場合の、保険
+                setTimeout(() => {
+                    clearInterval(intervalId);
+                }, 2000);
                 </script>
                 """,
                 height=0,
