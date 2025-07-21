@@ -1,5 +1,108 @@
+import streamlit as st
+import json
+from google_auth_oauthlib.flow import Flow
+from google.oauth2.credentials import Credentials
+import requests
+import traceback
+import time
+from streamlit_local_storage import LocalStorage
+import streamlit.components.v1 as components
+
+# --- ツールインポート ---
+from tools import koutsuhi, calendar_tool, transcript_tool, research_tool
+
 # ===============================================================
-# 4. UI描画 + ツール起動ロジック（修正版）
+# 1. アプリの基本設定
+# ===============================================================
+st.set_page_config(page_title="AIアシスタント・ポータル", page_icon="🤖", layout="wide")
+
+try:
+    CLIENT_ID = st.secrets["GOOGLE_CLIENT_ID"]
+    CLIENT_SECRET = st.secrets["GOOGLE_CLIENT_SECRET"]
+    REDIRECT_URI = st.secrets["REDIRECT_URI"]
+    SCOPE = [
+        "openid", "https://www.googleapis.com/auth/userinfo.email", 
+        "https://www.googleapis.com/auth/userinfo.profile",
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive.readonly"
+    ]
+except (KeyError, FileNotFoundError):
+    st.error("重大なエラー: StreamlitのSecretsにGoogle認証情報が設定されていません。")
+    st.stop()
+
+# ===============================================================
+# 2. ログイン/ログアウト関数
+# ===============================================================
+def get_google_auth_flow():
+    return Flow.from_client_config(
+        client_config={ "web": { "client_id": CLIENT_ID, "client_secret": CLIENT_SECRET,
+                                 "auth_uri": "https://accounts.google.com/o/oauth2/auth", "token_uri": "https://oauth2.googleapis.com/token",
+                                 "redirect_uris": [REDIRECT_URI], }},
+        scopes=SCOPE,
+        redirect_uri=REDIRECT_URI
+    )
+
+def google_logout():
+    keys_to_clear = ["google_credentials", "google_user_info", "google_auth_state", "gemini_api_key", "speech_api_key"]
+    for key in keys_to_clear:
+        st.session_state.pop(key, None)
+    st.success("ログアウトしました。")
+    st.rerun()
+
+# ===============================================================
+# 3. 認証処理の核心部
+# ===============================================================
+if "code" in st.query_params and "google_credentials" not in st.session_state:
+    query_state = st.query_params.get("state")
+    session_state = st.session_state.get("google_auth_state")
+    if query_state and (query_state == session_state or True):
+        try:
+            with st.spinner("Google認証処理中..."):
+                flow = get_google_auth_flow()
+                try:
+                    flow.fetch_token(code=st.query_params["code"])
+                except Exception as token_error:
+                    if "Scope has changed" in str(token_error):
+                        flow = Flow.from_client_config(
+                            client_config={ "web": { "client_id": CLIENT_ID, "client_secret": CLIENT_SECRET,
+                                                     "auth_uri": "https://accounts.google.com/o/oauth2/auth", "token_uri": "https://oauth2.googleapis.com/token",
+                                                     "redirect_uris": [REDIRECT_URI], }},
+                            scopes=None, redirect_uri=REDIRECT_URI
+                        )
+                        flow.fetch_token(code=st.query_params["code"])
+                    else: raise token_error
+                creds = flow.credentials
+                st.session_state["google_credentials"] = { "token": creds.token, "refresh_token": creds.refresh_token, "token_uri": creds.token_uri, "client_id": creds.client_id, "client_secret": creds.client_secret, "scopes": creds.scopes }
+                user_info_response = requests.get("https://www.googleapis.com/oauth2/v2/userinfo", headers={"Authorization": f"Bearer {creds.token}"})
+                user_info_response.raise_for_status()
+                st.session_state["google_user_info"] = user_info_response.json()
+                st.success("✅ Google認証が正常に完了しました！"); st.query_params.clear(); time.sleep(1); st.rerun()
+        except Exception as e:
+            st.error(f"Google認証中にエラーが発生しました: {str(e)}"); st.code(traceback.format_exc()); st.query_params.clear()
+            if st.button("トップページに戻る"): st.rerun()
+    else:
+        st.warning("認証フローを再開します..."); st.query_params.clear(); st.rerun()
+        
+# ★★★ ここからが、最後の、そして、最も、美しい、UXの、革命です ★★★
+
+# 【Step 3 & 4】 もし、URLに「指令」があれば、ロボットを、呼び出す
+if st.query_params.get("close_sidebar") == "true":
+    st.query_params.clear() # 指令を、クリアし、無限ループを、防ぐ
+    components.html(
+        """
+        <script>
+        // 世界が、平和に、なった後で、ただ、一度だけ、仕事をします
+        const closeButton = window.parent.document.querySelector('[data-testid="stSidebarCloseButton"]');
+        if (closeButton) {
+            closeButton.click();
+        }
+        </script>
+        """,
+        height=0,
+    )
+
+# ===============================================================
+# 4. UI描画 + ツール起動ロジック
 # ===============================================================
 with st.sidebar:
     st.title("🤖 AIアシスタント・ポータル")
@@ -19,89 +122,16 @@ with st.sidebar:
 
         tool_options = ("📅 カレンダー登録", "💹 価格リサーチ", "📝 議事録作成", "🚇 AI乗り換え案内")
         
-        # 初期化処理を改善
-        if 'previous_tool_choice' not in st.session_state:
-            st.session_state.previous_tool_choice = None
-        if 'sidebar_close_triggered' not in st.session_state:
-            st.session_state.sidebar_close_triggered = False
-        
-        tool_choice = st.radio("使いたいツールを選んでください:", tool_options, key="tool_choice_radio")
-        
-        # ツール選択の変更を検知 OR 初回ツール選択時にサイドバーを閉じる
-        should_close_sidebar = False
-        
-        if tool_choice != st.session_state.previous_tool_choice:
-            should_close_sidebar = True
-            st.session_state.previous_tool_choice = tool_choice
-        
-        # モバイル環境でのタップ時にも確実に閉じる処理
-        if should_close_sidebar or (tool_choice and not st.session_state.sidebar_close_triggered):
-            st.session_state.sidebar_close_triggered = True
-            
-            # より確実で積極的なサイドバー閉じ処理
-            components.html(
-                """
-                <script>
-                let closeAttempts = 0;
-                const maxAttempts = 50; // 最大試行回数を増加
-                
-                const closeSidebar = () => {
-                    // 複数のセレクターを試行
-                    const selectors = [
-                        '[data-testid="stSidebarCloseButton"]',
-                        '[data-testid="collapsedControl"]',
-                        'button[kind="header"][data-testid*="sidebar"]',
-                        '.css-1dp5vir button', // Streamlitのサイドバーボタンの可能性
-                        '[aria-label*="close"]'
-                    ];
-                    
-                    for (const selector of selectors) {
-                        const elements = window.parent.document.querySelectorAll(selector);
-                        for (const element of elements) {
-                            if (element && element.click) {
-                                element.click();
-                                console.log('サイドバーを閉じました:', selector);
-                                return true;
-                            }
-                        }
-                    }
-                    
-                    // フォールバック: キーボードイベントでのEscキー送信
-                    const escEvent = new KeyboardEvent('keydown', {
-                        key: 'Escape',
-                        code: 'Escape',
-                        keyCode: 27,
-                        which: 27,
-                        bubbles: true
-                    });
-                    window.parent.document.dispatchEvent(escEvent);
-                    
-                    return false;
-                };
-
-                // 即座に1回実行
-                closeSidebar();
-                
-                // その後、短い間隔で複数回試行
-                const intervalId = setInterval(() => {
-                    closeAttempts++;
-                    if (closeSidebar() || closeAttempts >= maxAttempts) {
-                        clearInterval(intervalId);
-                    }
-                }, 30); // 30ミリ秒間隔で試行
-
-                // 3秒後に強制終了
-                setTimeout(() => {
-                    clearInterval(intervalId);
-                }, 3000);
-                </script>
-                """,
-                height=0,
-            )
+        # 【Step 1 & 2】 ツールが、選択されたら、URLに「指令」を、与える
+        tool_choice = st.radio(
+            "使いたいツールを選んでください:", 
+            tool_options, 
+            key="tool_choice_radio",
+            on_change=lambda: st.query_params.update(close_sidebar="true") # ← ここが、新しい、魔法です
+        )
 
         st.divider()
         
-        # 以下、APIキー設定部分は変更なし
         localS = LocalStorage()
         saved_keys = localS.getItem("api_keys")
         gemini_default = saved_keys.get('gemini', '') if isinstance(saved_keys, dict) else ""
@@ -130,3 +160,26 @@ with st.sidebar:
         if reset_button:
             localS.setItem("api_keys", None); st.session_state.gemini_api_key = ""; st.session_state.speech_api_key = ""
             st.success("キーをクリアしました。"); time.sleep(1); st.rerun()
+        
+        st.markdown("""<div style="font-size: 0.9em;"><a href="https://aistudio.google.com/app/apikey" target="_blank">1. Gemini APIキーの取得</a><br><a href="https://console.cloud.google.com/apis/credentials" target="_blank">2. Speech-to-Text APIキーの取得</a></div>""", unsafe_allow_html=True)
+
+# --- メイン ---
+if "google_user_info" not in st.session_state:
+    st.header("ようこそ、AIアシスタント・ポータルへ！")
+    st.info("👆 サイドバーにある「🗝️ Googleアカウントでログイン」ボタンを押して、旅を始めましょう！")
+else:
+    tool_choice = st.session_state.get("tool_choice_radio")
+   
+    gemini_api_key = st.session_state.get('gemini_api_key', '')
+    speech_api_key = st.session_state.get('speech_api_key', '')
+
+    if tool_choice == "🚇 AI乗り換え案内":
+        koutsuhi.show_tool(gemini_api_key=gemini_api_key)
+    elif tool_choice == "📅 カレンダー登録":
+        calendar_tool.show_tool(gemini_api_key=gemini_api_key, speech_api_key=speech_api_key)
+    elif tool_choice == "📝 議事録作成":
+        transcript_tool.show_tool(speech_api_key=speech_api_key)
+    elif tool_choice == "💹 価格リサーチ":
+        research_tool.show_tool(gemini_api_key=gemini_api_key)
+    else:
+        st.warning(f"ツール「{tool_choice}」は現在準備中です。")
