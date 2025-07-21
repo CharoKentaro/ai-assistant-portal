@@ -43,7 +43,7 @@ def get_google_auth_flow():
     )
 
 def google_logout():
-    keys_to_clear = ["google_credentials", "google_user_info", "google_auth_state", "gemini_api_key", "speech_api_key", "previous_tool_choice"]
+    keys_to_clear = ["google_credentials", "google_user_info", "google_auth_state", "gemini_api_key", "speech_api_key", "previous_tool_choice", "sidebar_close_triggered"]
     for key in keys_to_clear:
         st.session_state.pop(key, None)
     st.success("ログアウトしました。")
@@ -104,42 +104,59 @@ with st.sidebar:
 
         tool_options = ("📅 カレンダー登録", "💹 価格リサーチ", "📝 議事録作成", "🚇 AI乗り換え案内")
         
+        # ちゃろ様の、完璧な、状態管理ロジックを、ここに、実装します
         if 'previous_tool_choice' not in st.session_state:
             st.session_state.previous_tool_choice = None
         
         tool_choice = st.radio("使いたいツールを選んでください:", tool_options, key="tool_choice_radio")
         
         if tool_choice != st.session_state.previous_tool_choice:
-            # ★★★ ここが、最後の、そして、最も、賢い、プロフェッショナルな、ロボットの、呪文です ★★★
+            st.session_state.previous_tool_choice = tool_choice
+            
+            # ちゃろ様の、最強の、ロボットを、ここに、召喚します
             components.html(
                 """
                 <script>
-                const tryCloseSidebar = () => {
-                    // 最も確実な「閉じるボタン」を探します
-                    const closeButton = window.parent.document.querySelector('[data-testid="stSidebarCloseButton"]');
-                    if (closeButton) {
-                        closeButton.click();
-                        return true; // 任務完了
+                let closeAttempts = 0;
+                const maxAttempts = 50;
+                
+                const closeSidebar = () => {
+                    const selectors = [
+                        '[data-testid="stSidebarCloseButton"]',
+                        '[data-testid="collapsedControl"]',
+                        'button[kind="header"][data-testid*="sidebar"]',
+                        '.css-1dp5vir button',
+                        '[aria-label*="close"]'
+                    ];
+                    for (const selector of selectors) {
+                        const elements = window.parent.document.querySelectorAll(selector);
+                        for (const element of elements) {
+                            if (element && element.click) {
+                                element.click();
+                                console.log('サイドバーを閉じました:', selector);
+                                return true;
+                            }
+                        }
                     }
-                    return false; // まだ、的が見つからない
+                    const escEvent = new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true });
+                    window.parent.document.dispatchEvent(escEvent);
+                    return false;
                 };
 
-                // 0.05秒ごとに、粘り強く、探し続けます
                 const intervalId = setInterval(() => {
-                    if (tryCloseSidebar()) {
-                        clearInterval(intervalId); // 成功したら、自分を消滅させる
+                    closeAttempts++;
+                    if (closeSidebar() || closeAttempts >= maxAttempts) {
+                        clearInterval(intervalId);
                     }
-                }, 50);
+                }, 60); // 少しだけ、間隔を、調整します
 
-                // 2秒経っても、成功しなかった場合の、保険
                 setTimeout(() => {
                     clearInterval(intervalId);
-                }, 2000);
+                }, 3000);
                 </script>
                 """,
                 height=0,
             )
-            st.session_state.previous_tool_choice = tool_choice
 
         st.divider()
         
