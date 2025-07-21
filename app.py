@@ -6,7 +6,7 @@ import requests
 import traceback
 import time
 from streamlit_local_storage import LocalStorage
-import streamlit.components.v1 as components # 魔法のロボットを呼び出すために、必要です
+import streamlit.components.v1 as components
 
 # --- ツールインポート ---
 from tools import koutsuhi, calendar_tool, transcript_tool, research_tool
@@ -31,7 +31,7 @@ except (KeyError, FileNotFoundError):
     st.stop()
 
 # ===============================================================
-# 2. ログイン/ログアウト関数 (変更なし)
+# 2. ログイン/ログアウト関数
 # ===============================================================
 def get_google_auth_flow():
     return Flow.from_client_config(
@@ -44,13 +44,14 @@ def get_google_auth_flow():
 
 def google_logout():
     keys_to_clear = ["google_credentials", "google_user_info", "google_auth_state", "gemini_api_key", "speech_api_key"]
+    st.session_state.pop('previous_tool_choice', None) # 見張り番の記憶もクリア
     for key in keys_to_clear:
         st.session_state.pop(key, None)
     st.success("ログアウトしました。")
     st.rerun()
 
 # ===============================================================
-# 3. 認証処理の核心部 (変更なし)
+# 3. 認証処理の核心部
 # ===============================================================
 if "code" in st.query_params and "google_credentials" not in st.session_state:
     query_state = st.query_params.get("state")
@@ -102,46 +103,46 @@ with st.sidebar:
         if st.button("🔑 ログアウト", use_container_width=True): google_logout()
         st.divider()
 
-        # --- ツール選択 ---
         tool_options = ("📅 カレンダー登録", "💹 価格リサーチ", "📝 議事録作成", "🚇 AI乗り換え案内")
         
-        # ★★★ ここからが、最後の、そして、最も、美しい、UXの、革命です ★★★
-        
-        # 1. 「見張り番」を、用意します
         if 'previous_tool_choice' not in st.session_state:
             st.session_state.previous_tool_choice = None
         
-        # 2. ユーザーに、ツールを、選んでもらいます
         tool_choice = st.radio("使いたいツールを選んでください:", tool_options, key="tool_choice_radio")
         
-        # 3. もし、選択が、変わった、その、瞬間なら...
         if tool_choice != st.session_state.previous_tool_choice:
-            # 3-1. 魔法の、ロボットを、呼び出します
-            close_sidebar_js = """
-            <script>
-            setTimeout(() => {
-                const doc = window.parent.document;
-                const close_button = doc.querySelector('.st-emotion-cache-1629p8f a');
-                if (close_button) {
-                    close_button.click();
-                } else {
-                    // Fallback for different Streamlit versions
-                    const main_content = doc.querySelector('[data-testid="stAppViewContainer"]');
-                    if(main_content) main_content.click();
-                }
-            }, 10);
-            </script>
-            """
-            components.html(close_sidebar_js, height=0)
-            
-            # 3-2. 「見張り番」に、今の、選択を、記憶させます
-            st.session_state.previous_tool_choice = tool_choice
+            components.html(
+                """
+                <script>
+                // 賢く、そして、粘り強い、ロボットを、呼び出します
+                const closeSidebar = () => {
+                    const closeButton = window.parent.document.querySelector('[data-testid="stSidebarCloseButton"]');
+                    if (closeButton) {
+                        closeButton.click();
+                        return true; // 任務完了
+                    }
+                    const mainContent = window.parent.document.querySelector('[data-testid="stAppViewContainer"]');
+                    if (mainContent) {
+                        mainContent.click();
+                        return true; // 任務完了
+                    }
+                    return false; // まだ、的が見つからない
+                };
 
-        # ★★★ 革命は、ここまでです ★★★
+                // 0.1秒後と、0.5秒後の、二段構えで、任務の、遂行を、試みます
+                setTimeout(() => {
+                    if (!closeSidebar()) {
+                        setTimeout(closeSidebar, 400);
+                    }
+                }, 100);
+                </script>
+                """,
+                height=0,
+            )
+            st.session_state.previous_tool_choice = tool_choice
 
         st.divider()
         
-        # --- APIキー設定 (変更なし) ---
         localS = LocalStorage()
         saved_keys = localS.getItem("api_keys")
         gemini_default = saved_keys.get('gemini', '') if isinstance(saved_keys, dict) else ""
@@ -173,7 +174,7 @@ with st.sidebar:
         
         st.markdown("""<div style="font-size: 0.9em;"><a href="https://aistudio.google.com/app/apikey" target="_blank">1. Gemini APIキーの取得</a><br><a href="https://console.cloud.google.com/apis/credentials" target="_blank">2. Speech-to-Text APIキーの取得</a></div>""", unsafe_allow_html=True)
 
-# --- メイン (変更なし) ---
+# --- メイン ---
 if "google_user_info" not in st.session_state:
     st.header("ようこそ、AIアシスタント・ポータルへ！")
     st.info("👆 サイドバーにある「🗝️ Googleアカウントでログイン」ボタンを押して、旅を始めましょう！")
