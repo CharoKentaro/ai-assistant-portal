@@ -43,7 +43,7 @@ def get_google_auth_flow():
     )
 
 def google_logout():
-    keys_to_clear = ["google_credentials", "google_user_info", "google_auth_state", "gemini_api_key", "speech_api_key"]
+    keys_to_clear = ["google_credentials", "google_user_info", "google_auth_state", "gemini_api_key", "speech_api_key", "previous_tool_choice"]
     for key in keys_to_clear:
         st.session_state.pop(key, None)
     st.success("ログアウトしました。")
@@ -82,24 +82,6 @@ if "code" in st.query_params and "google_credentials" not in st.session_state:
             if st.button("トップページに戻る"): st.rerun()
     else:
         st.warning("認証フローを再開します..."); st.query_params.clear(); st.rerun()
-        
-# ★★★ ここからが、最後の、そして、最も、美しい、UXの、革命です ★★★
-
-# 【Step 3 & 4】 もし、URLに「指令」があれば、ロボットを、呼び出す
-if st.query_params.get("close_sidebar") == "true":
-    st.query_params.clear() # 指令を、クリアし、無限ループを、防ぐ
-    components.html(
-        """
-        <script>
-        // 世界が、平和に、なった後で、ただ、一度だけ、仕事をします
-        const closeButton = window.parent.document.querySelector('[data-testid="stSidebarCloseButton"]');
-        if (closeButton) {
-            closeButton.click();
-        }
-        </script>
-        """,
-        height=0,
-    )
 
 # ===============================================================
 # 4. UI描画 + ツール起動ロジック
@@ -122,13 +104,45 @@ with st.sidebar:
 
         tool_options = ("📅 カレンダー登録", "💹 価格リサーチ", "📝 議事録作成", "🚇 AI乗り換え案内")
         
-        # 【Step 1 & 2】 ツールが、選択されたら、URLに「指令」を、与える
-        tool_choice = st.radio(
-            "使いたいツールを選んでください:", 
-            tool_options, 
-            key="tool_choice_radio",
-            on_change=lambda: st.query_params.update(close_sidebar="true") # ← ここが、新しい、魔法です
-        )
+        if 'previous_tool_choice' not in st.session_state:
+            st.session_state.previous_tool_choice = None
+        
+        tool_choice = st.radio("使いたいツールを選んでください:", tool_options, key="tool_choice_radio")
+        
+        if tool_choice != st.session_state.previous_tool_choice:
+            
+            # ★★★ ここが、最後の、そして、最も、賢い、司令官ロボットの、呪文です ★★★
+            components.html(
+                """
+                <script>
+                // 1. まず、自分の、世界の、広さを、確認します
+                if (window.innerWidth < 768) {
+                    
+                    // 2. もし、世界が、狭い（スマホである）ならば、以下の、任務を、遂行します
+                    const tryCloseSidebar = () => {
+                        const closeButton = window.parent.document.querySelector('[data-testid="stSidebarCloseButton"]');
+                        if (closeButton) {
+                            closeButton.click();
+                            return true;
+                        }
+                        return false;
+                    };
+
+                    const intervalId = setInterval(() => {
+                        if (tryCloseSidebar()) {
+                            clearInterval(intervalId);
+                        }
+                    }, 50);
+
+                    setTimeout(() => {
+                        clearInterval(intervalId);
+                    }, 2000);
+                }
+                </script>
+                """,
+                height=0,
+            )
+            st.session_state.previous_tool_choice = tool_choice
 
         st.divider()
         
