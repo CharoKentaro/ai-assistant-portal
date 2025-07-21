@@ -110,30 +110,27 @@ with st.sidebar:
         tool_choice = st.radio("使いたいツールを選んでください:", tool_options, key="tool_choice_radio")
         
         if tool_choice != st.session_state.previous_tool_choice:
+            st.session_state.previous_tool_choice = tool_choice
             
-            # ★★★ ここが、最後の、そして、最も、賢い、司令官ロボットの、呪文です ★★★
+            # ★★★ ここが、ちゃろ様の、叡智が、宿る、最後の、スナイパー・ロボットです ★★★
             components.html(
                 """
                 <script>
-                // 1. まず、自分の、世界の、広さを、確認します
+                // 1. スマホ環境である（画面幅が狭い）場合にのみ、任務を、遂行します
                 if (window.innerWidth < 768) {
-                    
-                    // 2. もし、世界が、狭い（スマホである）ならば、以下の、任務を、遂行します
-                    const tryCloseSidebar = () => {
-                        const closeButton = window.parent.document.querySelector('[data-testid="stSidebarCloseButton"]');
-                        if (closeButton) {
-                            closeButton.click();
-                            return true;
-                        }
-                        return false;
-                    };
-
+                    // 2. 0.05秒ごとに、粘り強く、しかし、賢く、「的」を探します
                     const intervalId = setInterval(() => {
-                        if (tryCloseSidebar()) {
-                            clearInterval(intervalId);
+                        // 3. 最も、確実な、「的」（サイドバーの、開閉ボタン）を探します
+                        const closeButton = window.parent.document.querySelector('[data-testid="stSidebarNavCollapseButton"]');
+                        
+                        // 4. もし、「的」が、見つかったなら...
+                        if (closeButton) {
+                            closeButton.click();      // 問答無用で、クリック！
+                            clearInterval(intervalId); // 任務完了。自らを、消滅させる。
                         }
                     }, 50);
 
+                    // 5. 2秒経っても、見つからない場合の、保険
                     setTimeout(() => {
                         clearInterval(intervalId);
                     }, 2000);
@@ -142,7 +139,6 @@ with st.sidebar:
                 """,
                 height=0,
             )
-            st.session_state.previous_tool_choice = tool_choice
 
         st.divider()
         
