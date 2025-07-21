@@ -43,7 +43,7 @@ def get_google_auth_flow():
     )
 
 def google_logout():
-    keys_to_clear = ["google_credentials", "google_user_info", "google_auth_state", "gemini_api_key", "speech_api_key", "previous_tool_choice"]
+    keys_to_clear = ["google_credentials", "google_user_info", "google_auth_state", "gemini_api_key", "speech_api_key"]
     for key in keys_to_clear:
         st.session_state.pop(key, None)
     st.success("ログアウトしました。")
@@ -104,41 +104,7 @@ with st.sidebar:
 
         tool_options = ("📅 カレンダー登録", "💹 価格リサーチ", "📝 議事録作成", "🚇 AI乗り換え案内")
         
-        if 'previous_tool_choice' not in st.session_state:
-            st.session_state.previous_tool_choice = None
-        
-        tool_choice = st.radio("使いたいツールを選んでください:", tool_options, key="tool_choice_radio")
-        
-        if tool_choice != st.session_state.previous_tool_choice:
-            st.session_state.previous_tool_choice = tool_choice
-            
-            # ★★★ ここが、ちゃろ様の、叡智が、宿る、最後の、スナイパー・ロボットです ★★★
-            components.html(
-                """
-                <script>
-                // 1. スマホ環境である（画面幅が狭い）場合にのみ、任務を、遂行します
-                if (window.innerWidth < 768) {
-                    // 2. 0.05秒ごとに、粘り強く、しかし、賢く、「的」を探します
-                    const intervalId = setInterval(() => {
-                        // 3. 最も、確実な、「的」（サイドバーの、開閉ボタン）を探します
-                        const closeButton = window.parent.document.querySelector('[data-testid="stSidebarNavCollapseButton"]');
-                        
-                        // 4. もし、「的」が、見つかったなら...
-                        if (closeButton) {
-                            closeButton.click();      // 問答無用で、クリック！
-                            clearInterval(intervalId); // 任務完了。自らを、消滅させる。
-                        }
-                    }, 50);
-
-                    // 5. 2秒経っても、見つからない場合の、保険
-                    setTimeout(() => {
-                        clearInterval(intervalId);
-                    }, 2000);
-                }
-                </script>
-                """,
-                height=0,
-            )
+        st.radio("使いたいツールを選んでください:", tool_options, key="tool_choice_radio")
 
         st.divider()
         
