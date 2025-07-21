@@ -6,6 +6,7 @@ import requests
 import traceback
 import time
 from streamlit_local_storage import LocalStorage
+import streamlit.components.v1 as components # 魔法のロボットを呼び出すために、必要です
 
 # --- ツールインポート ---
 from tools import koutsuhi, calendar_tool, transcript_tool, research_tool
@@ -30,10 +31,9 @@ except (KeyError, FileNotFoundError):
     st.stop()
 
 # ===============================================================
-# 2. ログイン/ログアウト関数
+# 2. ログイン/ログアウト関数 (変更なし)
 # ===============================================================
 def get_google_auth_flow():
-    # 「認証が成功したコード」の形を、完全に、維持します
     return Flow.from_client_config(
         client_config={ "web": { "client_id": CLIENT_ID, "client_secret": CLIENT_SECRET,
                                  "auth_uri": "https://accounts.google.com/o/oauth2/auth", "token_uri": "https://oauth2.googleapis.com/token",
@@ -50,7 +50,7 @@ def google_logout():
     st.rerun()
 
 # ===============================================================
-# 3. 認証処理の核心部
+# 3. 認証処理の核心部 (変更なし)
 # ===============================================================
 if "code" in st.query_params and "google_credentials" not in st.session_state:
     query_state = st.query_params.get("state")
@@ -102,12 +102,46 @@ with st.sidebar:
         if st.button("🔑 ログアウト", use_container_width=True): google_logout()
         st.divider()
 
+        # --- ツール選択 ---
         tool_options = ("📅 カレンダー登録", "💹 価格リサーチ", "📝 議事録作成", "🚇 AI乗り換え案内")
+        
+        # ★★★ ここからが、最後の、そして、最も、美しい、UXの、革命です ★★★
+        
+        # 1. 「見張り番」を、用意します
+        if 'previous_tool_choice' not in st.session_state:
+            st.session_state.previous_tool_choice = None
+        
+        # 2. ユーザーに、ツールを、選んでもらいます
         tool_choice = st.radio("使いたいツールを選んでください:", tool_options, key="tool_choice_radio")
+        
+        # 3. もし、選択が、変わった、その、瞬間なら...
+        if tool_choice != st.session_state.previous_tool_choice:
+            # 3-1. 魔法の、ロボットを、呼び出します
+            close_sidebar_js = """
+            <script>
+            setTimeout(() => {
+                const doc = window.parent.document;
+                const close_button = doc.querySelector('.st-emotion-cache-1629p8f a');
+                if (close_button) {
+                    close_button.click();
+                } else {
+                    // Fallback for different Streamlit versions
+                    const main_content = doc.querySelector('[data-testid="stAppViewContainer"]');
+                    if(main_content) main_content.click();
+                }
+            }, 10);
+            </script>
+            """
+            components.html(close_sidebar_js, height=0)
+            
+            # 3-2. 「見張り番」に、今の、選択を、記憶させます
+            st.session_state.previous_tool_choice = tool_choice
+
+        # ★★★ 革命は、ここまでです ★★★
+
         st.divider()
         
-        # ★★★ ここが、最後の、そして、最も、美しい、修正箇所です ★★★
-        
+        # --- APIキー設定 (変更なし) ---
         localS = LocalStorage()
         saved_keys = localS.getItem("api_keys")
         gemini_default = saved_keys.get('gemini', '') if isinstance(saved_keys, dict) else ""
@@ -131,21 +165,15 @@ with st.sidebar:
 
         if save_button:
             localS.setItem("api_keys", {"gemini": st.session_state.gemini_api_key, "speech": st.session_state.speech_api_key})
-            st.success("キーを保存しました！")
-            time.sleep(1)
-            st.rerun()
+            st.success("キーを保存しました！"); time.sleep(1); st.rerun()
         
         if reset_button:
-            localS.setItem("api_keys", None)
-            st.session_state.gemini_api_key = ""
-            st.session_state.speech_api_key = ""
-            st.success("キーをクリアしました。")
-            time.sleep(1)
-            st.rerun()
+            localS.setItem("api_keys", None); st.session_state.gemini_api_key = ""; st.session_state.speech_api_key = ""
+            st.success("キーをクリアしました。"); time.sleep(1); st.rerun()
         
         st.markdown("""<div style="font-size: 0.9em;"><a href="https://aistudio.google.com/app/apikey" target="_blank">1. Gemini APIキーの取得</a><br><a href="https://console.cloud.google.com/apis/credentials" target="_blank">2. Speech-to-Text APIキーの取得</a></div>""", unsafe_allow_html=True)
 
-# --- メイン ---
+# --- メイン (変更なし) ---
 if "google_user_info" not in st.session_state:
     st.header("ようこそ、AIアシスタント・ポータルへ！")
     st.info("👆 サイドバーにある「🗝️ Googleアカウントでログイン」ボタンを押して、旅を始めましょう！")
