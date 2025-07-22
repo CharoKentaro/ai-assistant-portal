@@ -46,48 +46,62 @@ def create_google_calendar_url(details):
 def show_tool(gemini_api_key, speech_api_key):
     st.header("📅 あなただけのAI秘書", divider='rainbow')
 
+    # --- 状態管理の初期化 ---
     if "cal_messages" not in st.session_state:
         st.session_state.cal_messages = [{"role": "assistant", "content": "こんにちは！ご予定を、下の３つの方法のいずれかでお伝えください。"}]
+    # ★ 1.「やるべきタスク」の記憶場所を準備
+    if "cal_task" not in st.session_state:
+        st.session_state.cal_task = None
 
     # --- チャット履歴の表示 ---
     for message in st.session_state.cal_messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
-    # ★ 1. ３つの入力方法を定義
-    st.write("---")
-    st.write("##### 方法１：マイクで直接話す")
-    audio_info = mic_recorder(start_prompt="🎤 録音開始", stop_prompt="⏹️ 録音停止", key='cal_mic_recorder')
-    
-    st.write("##### 方法２：音声ファイルをアップロードする")
-    uploaded_file = st.file_uploader("音声ファイルを選択:", type=['wav', 'mp3', 'm4a', 'flac'], key="cal_uploader")
+    # ★ 2.「待機フェーズ」の定義：「やるべきタスク」が無い場合のみ、入力ウィジェットを表示
+    if st.session_state.cal_task is None:
+        st.write("---")
+        st.write("##### 方法１：マイクで直接話す")
+        audio_info = mic_recorder(start_prompt="🎤 録音開始", stop_prompt="⏹️ 録音停止", key='cal_mic_recorder')
+        
+        st.write("##### 方法２：音声ファイルをアップロードする")
+        uploaded_file = st.file_uploader("音声ファイルを選択:", type=['wav', 'mp3', 'm4a', 'flac'], key="cal_uploader")
 
-    st.write("##### 方法３：キーボードで入力する")
-    text_prompt = st.chat_input("キーボードで入力...", key="cal_text_input")
+        st.write("##### 方法３：キーボードで入力する")
+        text_prompt = st.chat_input("キーボードで入力...", key="cal_text_input")
 
-    # ★ 2. 厳格な交通整理を行い、処理すべきプロンプトを一つに決定
-    prompt = None
-    if audio_info and audio_info['bytes']:
-        if not speech_api_key: st.error("サイドバーでSpeech-to-Text APIキーを設定してください。")
-        else:
-            with st.spinner("音声を文字に変換中..."):
-                prompt = transcribe_audio(audio_info['bytes'], speech_api_key)
-    elif uploaded_file:
-        if not speech_api_key: st.error("サイドバーでSpeech-to-Text APIキーを設定してください。")
-        else:
-            with st.spinner("音声ファイルを文字に変換中..."):
-                prompt = transcribe_audio(uploaded_file.getvalue(), speech_api_key)
-    elif text_prompt:
-        prompt = text_prompt
+        # 交通整理：いずれかの入力があったら、それを「タスク」として記憶し、リロード
+        task_prompt = None
+        if audio_info and audio_info['bytes']:
+            if not speech_api_key: st.error("サイドバーでSpeech-to-Text APIキーを設定してください。")
+            else:
+                with st.spinner("音声を文字に変換中..."):
+                    task_prompt = transcribe_audio(audio_info['bytes'], speech_api_key)
+        elif uploaded_file:
+            if not speech_api_key: st.error("サイドバーでSpeech-to-Text APIキーを設定してください。")
+            else:
+                with st.spinner("音声ファイルを文字に変換中..."):
+                    task_prompt = transcribe_audio(uploaded_file.getvalue(), speech_api_key)
+        elif text_prompt:
+            task_prompt = text_prompt
+        
+        # タスクが確定したら、記憶にセットして「処理フェーズ」へ移行
+        if task_prompt:
+            st.session_state.cal_task = task_prompt
+            st.rerun()
 
-    # ★ 3. 処理すべきプロンプトが存在する場合のみ、AI処理を「一度だけ」実行
-    if prompt:
+    # ★ 3.「処理フェーズ」の定義：「やるべきタスク」がある場合のみ、実行
+    else: # st.session_state.cal_task is not None
+        # 入力ウィジェットは表示されない
+
         # ユーザーの入力を履歴に追加し、表示する
+        prompt = st.session_state.cal_task
         st.session_state.cal_messages.append({"role": "user", "content": prompt})
+        
+        # AIの応答処理を、中断なく、最後まで、一気に実行する
         with st.chat_message("user"):
             st.markdown(prompt)
 
-        # AIの応答処理を開始する
         with st.chat_message("assistant"):
             if not gemini_api_key: 
                 st.error("サイドバーでGemini APIキーを設定してください。")
@@ -128,6 +142,7 @@ def show_tool(gemini_api_key, speech_api_key):
                     st.error(error_message)
                     st.session_state.cal_messages.append({"role": "assistant", "content": "申し訳ありません、エラーが発生しました。"})
         
-        # ★ 4. 全ての処理が終わった後、入力ウィジェットをクリアするため、最後に一度だけリロード
+        # ★ 4. 全ての処理が終わった後、タスクを記憶から消去し、「待機フェーズ」に戻る
+        st.session_state.cal_task = None
         time.sleep(1) # ユーザーが結果を認識する時間を確保
         st.rerun()
