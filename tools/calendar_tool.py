@@ -45,11 +45,9 @@ def create_google_calendar_url(details):
 # ===============================================================
 def show_tool(gemini_api_key, speech_api_key):
     st.header("📅 あなただけのAI秘書", divider='rainbow')
-    
-    # ★ 1. セッションステートの初期化
+
     if "cal_messages" not in st.session_state:
         st.session_state.cal_messages = [{"role": "assistant", "content": "こんにちは！ご予定を、下の３つの方法のいずれかでお伝えください。"}]
-    # ループ防止用の「処理すべきタスク」を初期化
     if "new_prompt_to_process" not in st.session_state:
         st.session_state.new_prompt_to_process = None
 
@@ -57,70 +55,71 @@ def show_tool(gemini_api_key, speech_api_key):
     for message in st.session_state.cal_messages:
         with st.chat_message(message["role"]): st.markdown(message["content"])
 
-    # ★ 2. ３つの入力方法を定義（ここではAI処理はしない）
-    st.write("---")
-    st.write("##### 方法１：マイクで直接話す")
-    audio_info = mic_recorder(start_prompt="🎤 録音開始", stop_prompt="⏹️ 録音停止", key='cal_mic_recorder')
-    if audio_info and audio_info['bytes']:
-        if not speech_api_key: st.error("サイドバーでSpeech-to-Text APIキーを設定してください。")
-        else:
-            with st.spinner("音声を文字に変換中..."):
-                transcript = transcribe_audio(audio_info['bytes'], speech_api_key)
-                if transcript:
-                    st.session_state.new_prompt_to_process = transcript
-                    st.rerun() # タスクをセットしたら即リロード
+    # ★ 1.「一度だけの約束」ルール：まだ処理すべきタスクが無い場合のみ、入力を受け付ける
+    if st.session_state.new_prompt_to_process is None:
+        st.write("---")
+        st.write("##### 方法１：マイクで直接話す")
+        audio_info = mic_recorder(start_prompt="🎤 録音開始", stop_prompt="⏹️ 録音停止", key='cal_mic_recorder')
+        if audio_info and audio_info['bytes']:
+            if not speech_api_key: st.error("サイドバーでSpeech-to-Text APIキーを設定してください。")
+            else:
+                with st.spinner("音声を文字に変換中..."):
+                    transcript = transcribe_audio(audio_info['bytes'], speech_api_key)
+                    if transcript:
+                        st.session_state.new_prompt_to_process = transcript
+                        st.rerun()
 
-    st.write("---")
-    st.write("##### 方法２：音声ファイルをアップロードする")
-    uploaded_file = st.file_uploader("音声ファイルを選択:", type=['wav', 'mp3', 'm4a', 'flac'], key="cal_uploader")
-    if uploaded_file:
-        if not speech_api_key: st.error("サイドバーでSpeech-to-Text APIキーを設定してください。")
-        else:
-            with st.spinner("音声ファイルを文字に変換中..."):
-                transcript = transcribe_audio(uploaded_file.getvalue(), speech_api_key)
-                if transcript:
-                    st.session_state.new_prompt_to_process = transcript
-                    st.rerun() # タスクをセットしたら即リロード
+        st.write("---")
+        st.write("##### 方法２：音声ファイルをアップロードする")
+        uploaded_file = st.file_uploader("音声ファイルを選択:", type=['wav', 'mp3', 'm4a', 'flac'], key="cal_uploader")
+        if uploaded_file:
+            if not speech_api_key: st.error("サイドバーでSpeech-to-Text APIキーを設定してください。")
+            else:
+                with st.spinner("音声ファイルを文字に変換中..."):
+                    transcript = transcribe_audio(uploaded_file.getvalue(), speech_api_key)
+                    if transcript:
+                        st.session_state.new_prompt_to_process = transcript
+                        st.rerun()
 
-    st.write("---")
-    text_prompt = st.chat_input("方法３：キーボードで入力...", key="cal_text_input")
-    if text_prompt:
-        st.session_state.new_prompt_to_process = text_prompt
-        st.rerun() # タスクをセットしたら即リロード
+        st.write("---")
+        text_prompt = st.chat_input("方法３：キーボードで入力...", key="cal_text_input")
+        if text_prompt:
+            st.session_state.new_prompt_to_process = text_prompt
+            st.rerun()
 
-    # ★ 3. 「処理すべきタスク」がある場合のみ、AI処理を実行する
+    # ★ 2. AI処理ブロック：処理すべきタスクがある場合のみ、実行する
     if st.session_state.new_prompt_to_process:
-        # ユーザープロンプトをチャットに追加表示
         prompt = st.session_state.new_prompt_to_process
         st.session_state.cal_messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
-
-        # AI処理の実行
-        if not gemini_api_key: 
-            st.error("サイドバーでGemini APIキーを設定してください。")
-        else:
-            try:
-                genai.configure(api_key=gemini_api_key)
-                jst = pytz.timezone('Asia/Tokyo')
-                current_time_jst = datetime.now(jst).isoformat()
-                
-                system_prompt = f"""
-                あなたは予定を解釈する優秀なアシスタントです。ユーザーのテキストから「title」「start_time」「end_time」「location」「details」を抽出してください。
-                - 現在の日時は `{current_time_jst}` (JST)です。これを基準に日時を解釈してください。
-                - 日時は `YYYY-MM-DDTHH:MM:SS` 形式で出力してください。
-                - `end_time` が不明な場合は、`start_time` の1時間後を自動設定してください。
-                - 必ず以下のJSON形式のみで回答してください。他の言葉は一切含めないでください。
-                ```json
-                {{
-                  "title": "（件名）", "start_time": "YYYY-MM-DDTHH:MM:SS", "end_time": "YYYY-MM-DDTHH:MM:SS", "location": "（場所）", "details": "（詳細）"
-                }}
-                ```
-                """
-                model = genai.GenerativeModel('gemini-1.5-flash-latest', system_instruction=system_prompt)
-
-                with st.chat_message("assistant"):
+        
+        # ユーザープロンプトを再描画するために、一度リロードを挟む
+        if "user_prompt_displayed" not in st.session_state:
+            st.session_state.user_prompt_displayed = True
+            st.rerun()
+        
+        with st.chat_message("assistant"):
+            if not gemini_api_key: 
+                st.error("サイドバーでGemini APIキーを設定してください。")
+            else:
+                try:
                     with st.spinner("AIが予定を組み立てています..."):
+                        genai.configure(api_key=gemini_api_key)
+                        jst = pytz.timezone('Asia/Tokyo')
+                        current_time_jst = datetime.now(jst).isoformat()
+                        
+                        system_prompt = f"""
+                        あなたは予定を解釈する優秀なアシスタントです。ユーザーのテキストから「title」「start_time」「end_time」「location」「details」を抽出してください。
+                        - 現在の日時は `{current_time_jst}` (JST)です。これを基準に日時を解釈してください。
+                        - 日時は `YYYY-MM-DDTHH:MM:SS` 形式で出力してください。
+                        - `end_time` が不明な場合は、`start_time` の1時間後を自動設定してください。
+                        - 必ず以下のJSON形式のみで回答してください。他の言葉は一切含めないでください。
+                        ```json
+                        {{
+                          "title": "（件名）", "start_time": "YYYY-MM-DDTHH:MM:SS", "end_time": "YYYY-MM-DDTHH:MM:SS", "location": "（場所）", "details": "（詳細）"
+                        }}
+                        ```
+                        """
+                        model = genai.GenerativeModel('gemini-1.5-flash-latest', system_instruction=system_prompt)
                         response = model.generate_content(prompt)
                         json_text = response.text.strip().lstrip("```json").rstrip("```").strip()
                         schedule_details = json.loads(json_text)
@@ -135,10 +134,13 @@ def show_tool(gemini_api_key, speech_api_key):
                         st.markdown(ai_response)
                         st.session_state.cal_messages.append({"role": "assistant", "content": ai_response})
 
-            except Exception as e:
-                error_message = f"AIとの通信中にエラー: {e}"
-                st.error(error_message)
-                st.session_state.cal_messages.append({"role": "assistant", "content": "申し訳ありません、エラーが発生しました。"})
-        
-        # ★ 4. 処理が終わったら、タスクを記憶から完全に消去する！
-        st.session_state.new_prompt_to_process = None
+                except Exception as e:
+                    error_message = f"AIとの通信中にエラー: {e}"
+                    st.error(error_message)
+                    st.session_state.cal_messages.append({"role": "assistant", "content": "申し訳ありません、エラーが発生しました。"})
+            
+            # ★ 3. 処理が完了したら、タスクを記憶から消し、表示フラグもリセットして、次の入力に備える
+            st.session_state.new_prompt_to_process = None
+            if "user_prompt_displayed" in st.session_state:
+                del st.session_state.user_prompt_displayed
+            st.rerun()
