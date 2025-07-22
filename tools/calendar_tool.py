@@ -2,8 +2,7 @@
 
 import streamlit as st
 import google.generativeai as genai
-from google.cloud import speech
-from google.api_core.client_options import ClientOptions
+# Speech-to-Text関連のライブラリは、全て不要になった！
 import json
 from datetime import datetime
 import urllib.parse
@@ -12,21 +11,8 @@ from streamlit_mic_recorder import mic_recorder
 import time
 
 # ===============================================================
-# 補助関数（変更なし）
+# 補助関数（transcribe_audioは完全に不要に）
 # ===============================================================
-def transcribe_audio(audio_bytes, api_key):
-    if not audio_bytes or not api_key: return None
-    try:
-        client_options = ClientOptions(api_key=api_key)
-        client = speech.SpeechClient(client_options=client_options)
-        audio = speech.RecognitionAudio(content=audio_bytes)
-        config = speech.RecognitionConfig(language_code="ja-JP", model="latest_long")
-        response = client.recognize(config=config, audio=audio)
-        if response.results: return response.results[0].alternatives[0].transcript
-    except Exception as e:
-        st.error(f"音声認識エラー: {e}")
-    return None
-
 def create_google_calendar_url(details):
     try:
         jst = pytz.timezone('Asia/Tokyo')
@@ -43,48 +29,48 @@ def create_google_calendar_url(details):
 # ===============================================================
 # 専門家のメインの仕事
 # ===============================================================
-def show_tool(gemini_api_key, speech_api_key):
+def show_tool(gemini_api_key, speech_api_key): # speech_api_keyはもう使わないが、互換性のために残す
     st.header("📅 あなただけのAI秘書", divider='rainbow')
 
     # --- 状態管理の初期化 ---
     if "cal_messages" not in st.session_state:
-        st.session_state.cal_messages = [{"role": "assistant", "content": "こんにちは！ご予定を、下の３つの方法のいずれかでお伝えください。"}]
+        st.session_state.cal_messages = [{"role": "assistant", "content": "こんにちは！ご予定を、キーボードかマイクで直接お伝えください。"}]
     if "cal_task" not in st.session_state:
         st.session_state.cal_task = None
+        st.session_state.cal_task_type = None
 
-    # --- チャット履歴の表示（常に表示） ---
+    # --- チャット履歴の表示 ---
     for message in st.session_state.cal_messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+        # ユーザーメッセージが音声の場合の表示を調整
+        if message["role"] == "user" and isinstance(message["content"], dict) and "type" in message["content"]:
+            with st.chat_message("user"):
+                st.write("🎤 (音声で伝えました)")
+        else:
+             with st.chat_message(message["role"]):
+                st.markdown(message["content"])
 
-    # ★ 1.「入力受付フェーズ」：タスクが無い場合のみ、入力を受け付ける
+    # --- 「待機フェーズ」の定義 ---
     if st.session_state.cal_task is None:
-        prompt = None
-        # ３つの入力方法を定義
+        # UIの定義
         st.write("---")
         text_prompt = st.chat_input("キーボードで入力...", key="cal_text_input")
         audio_info = mic_recorder(start_prompt="🎤 マイクで録音", stop_prompt="⏹️ 停止", key='cal_mic_recorder')
-        uploaded_file = st.file_uploader("📁 ファイルをアップロード", type=['wav', 'mp3', 'm4a', 'flac'], key="cal_uploader")
 
-        # 交通整理
+        # いずれかの入力があったら、タスクとして記憶し、リロード
         if text_prompt:
-            prompt = text_prompt
+            st.session_state.cal_task = text_prompt
+            st.session_state.cal_task_type = "text"
+            st.session_state.cal_messages.append({"role": "user", "content": text_prompt})
+            st.rerun()
         elif audio_info and audio_info['bytes']:
-            with st.spinner("音声を文字に変換中..."):
-                prompt = transcribe_audio(audio_info['bytes'], speech_api_key)
-        elif uploaded_file:
-            with st.spinner("音声ファイルを文字に変換中..."):
-                prompt = transcribe_audio(uploaded_file.getvalue(), speech_api_key)
-
-        # 新しいタスクをセット
-        if prompt:
-            st.session_state.cal_task = prompt
-            st.session_state.cal_messages.append({"role": "user", "content": prompt})
+            st.session_state.cal_task = audio_info['bytes']
+            st.session_state.cal_task_type = "audio"
+            # ユーザーの入力として「音声」を記録
+            st.session_state.cal_messages.append({"role": "user", "content": {"type": "audio"}})
             st.rerun()
 
-    # ★ 2.「AI処理フェーズ」：タスクがある場合のみ、AIの応答を生成する
+    # --- 「AI処理フェーズ」の定義 ---
     else:
-        # AIの応答を生成
         with st.chat_message("assistant"):
             if not gemini_api_key: 
                 st.error("サイドバーでGemini APIキーを設定してください。")
@@ -95,8 +81,11 @@ def show_tool(gemini_api_key, speech_api_key):
                         jst = pytz.timezone('Asia/Tokyo')
                         current_time_jst = datetime.now(jst).isoformat()
                         
+                        # ★★★ ここが、ちゃろ様のアイデアの、核心部です ★★★
                         system_prompt = f"""
-                        あなたは予定を解釈する優秀なアシスタントです。ユーザーのテキストから「title」「start_time」「end_time」「location」「details」を抽出してください。
+                        あなたは、ユーザーから渡されたテキスト、あるいは「音声」を直接解釈し、Googleカレンダーの予定を作成する、超高性能なAI秘書です。
+                        - **もし入力が音声データの場合は、まず、その内容を、正確に、日本語で、文字に起こしてください。**
+                        - その後、文字に起こした内容、あるいは、直接入力されたテキストから、「title」「start_time」「end_time」「location」「details」を抽出してください。
                         - 現在の日時は `{current_time_jst}` (JST)です。これを基準に日時を解釈してください。
                         - 日時は `YYYY-MM-DDTHH:MM:SS` 形式で出力してください。
                         - `end_time` が不明な場合は、`start_time` の1時間後を自動設定してください。
@@ -106,7 +95,12 @@ def show_tool(gemini_api_key, speech_api_key):
                         ```
                         """
                         model = genai.GenerativeModel('gemini-1.5-flash-latest', system_instruction=system_prompt)
-                        response = model.generate_content(st.session_state.cal_task)
+                        
+                        # テキストか音声かによって、モデルに渡す内容を変える
+                        task_data = st.session_state.cal_task
+                        response = model.generate_content(task_data) # Geminiが自動で形式を判断する
+
+                        # 応答処理は共通
                         json_text = response.text.strip().lstrip("```json").rstrip("```").strip()
                         schedule_details = json.loads(json_text)
                         calendar_url = create_google_calendar_url(schedule_details)
@@ -125,8 +119,8 @@ def show_tool(gemini_api_key, speech_api_key):
                     st.error(error_message)
                     st.session_state.cal_messages.append({"role": "assistant", "content": "申し訳ありません、エラーが発生しました。"})
         
-        # ★ 3. 完了：タスクを消去し、次の入力に備える
+        # 完了：タスクを消去し、「待機フェーズ」に戻る
         st.session_state.cal_task = None
-        # 最後のrerunは不要。次の入力があれば、自動的に新しいサイクルが始まる。
-        time.sleep(1) # 連続入力を防ぐための短い待機
-        st.rerun() #やはり、入力ウィジェットの重複実行を防ぐために必要
+        st.session_state.cal_task_type = None
+        time.sleep(1) 
+        st.rerun()
