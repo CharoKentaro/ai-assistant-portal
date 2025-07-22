@@ -11,4 +11,4 @@ googlemaps
 streamlit-local-storage
 google-generativeai
 google-cloud-speech
-streamlit-audiorecorder
+streamlit-mic-recorder
