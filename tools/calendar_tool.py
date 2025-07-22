@@ -46,65 +46,51 @@ def create_google_calendar_url(details):
 def show_tool(gemini_api_key, speech_api_key):
     st.header("📅 あなただけのAI秘書", divider='rainbow')
 
-    # ★ 1. 状態管理をより明確にするための変数を準備
     if "cal_messages" not in st.session_state:
         st.session_state.cal_messages = [{"role": "assistant", "content": "こんにちは！ご予定を、下の３つの方法のいずれかでお伝えください。"}]
-    if "cal_task" not in st.session_state:
-        st.session_state.cal_task = None
-    if "cal_processing_lock" not in st.session_state:
-        st.session_state.cal_processing_lock = False
 
     # --- チャット履歴の表示 ---
     for message in st.session_state.cal_messages:
-        with st.chat_message(message["role"]): st.markdown(message["content"])
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
 
-    # ★ 2.「交通整理」の実装：処理中でない場合のみ、入力を受け付ける
-    if not st.session_state.cal_processing_lock:
-        st.write("---")
-        
-        # --- 入力方法１：マイク ---
-        st.write("##### 方法１：マイクで直接話す")
-        audio_info = mic_recorder(start_prompt="🎤 録音開始", stop_prompt="⏹️ 録音停止", key='cal_mic_recorder')
-        
-        # --- 入力方法２：ファイル ---
-        st.write("##### 方法２：音声ファイルをアップロードする")
-        uploaded_file = st.file_uploader("音声ファイルを選択:", type=['wav', 'mp3', 'm4a', 'flac'], key="cal_uploader")
+    # ★ 1. ３つの入力方法を定義
+    st.write("---")
+    st.write("##### 方法１：マイクで直接話す")
+    audio_info = mic_recorder(start_prompt="🎤 録音開始", stop_prompt="⏹️ 録音停止", key='cal_mic_recorder')
+    
+    st.write("##### 方法２：音声ファイルをアップロードする")
+    uploaded_file = st.file_uploader("音声ファイルを選択:", type=['wav', 'mp3', 'm4a', 'flac'], key="cal_uploader")
 
-        # --- 入力方法３：テキスト ---
-        st.write("##### 方法３：キーボードで入力する")
-        text_prompt = st.chat_input("キーボードで入力...", key="cal_text_input")
+    st.write("##### 方法３：キーボードで入力する")
+    text_prompt = st.chat_input("キーボードで入力...", key="cal_text_input")
 
-        # ★ 3. 厳格な「交通整理」ロジック：if/elif/elseで一度に一つの入力のみを処理
-        task_prompt = None
-        if audio_info and audio_info['bytes']:
-            if not speech_api_key: st.error("サイドバーでSpeech-to-Text APIキーを設定してください。")
-            else:
-                with st.spinner("音声を文字に変換中..."):
-                    task_prompt = transcribe_audio(audio_info['bytes'], speech_api_key)
-        elif uploaded_file:
-            if not speech_api_key: st.error("サイドバーでSpeech-to-Text APIキーを設定してください。")
-            else:
-                with st.spinner("音声ファイルを文字に変換中..."):
-                    task_prompt = transcribe_audio(uploaded_file.getvalue(), speech_api_key)
-        elif text_prompt:
-            task_prompt = text_prompt
-        
-        # タスクが確定した場合、ロックをかけてAI処理に進む
-        if task_prompt:
-            st.session_state.cal_task = task_prompt
-            st.session_state.cal_processing_lock = True # 処理ロック！
-            st.rerun()
+    # ★ 2. 厳格な交通整理を行い、処理すべきプロンプトを一つに決定
+    prompt = None
+    if audio_info and audio_info['bytes']:
+        if not speech_api_key: st.error("サイドバーでSpeech-to-Text APIキーを設定してください。")
+        else:
+            with st.spinner("音声を文字に変換中..."):
+                prompt = transcribe_audio(audio_info['bytes'], speech_api_key)
+    elif uploaded_file:
+        if not speech_api_key: st.error("サイドバーでSpeech-to-Text APIキーを設定してください。")
+        else:
+            with st.spinner("音声ファイルを文字に変換中..."):
+                prompt = transcribe_audio(uploaded_file.getvalue(), speech_api_key)
+    elif text_prompt:
+        prompt = text_prompt
 
-    # ★ 4. AI処理ブロック：ロックがかかっている場合のみ実行
-    if st.session_state.cal_processing_lock:
-        prompt = st.session_state.cal_task
+    # ★ 3. 処理すべきプロンプトが存在する場合のみ、AI処理を「一度だけ」実行
+    if prompt:
+        # ユーザーの入力を履歴に追加し、表示する
         st.session_state.cal_messages.append({"role": "user", "content": prompt})
-        
         with st.chat_message("user"):
             st.markdown(prompt)
-        
+
+        # AIの応答処理を開始する
         with st.chat_message("assistant"):
-            if not gemini_api_key: st.error("サイドバーでGemini APIキーを設定してください。")
+            if not gemini_api_key: 
+                st.error("サイドバーでGemini APIキーを設定してください。")
             else:
                 try:
                     with st.spinner("AIが予定を組み立てています..."):
@@ -138,11 +124,10 @@ def show_tool(gemini_api_key, speech_api_key):
                         st.session_state.cal_messages.append({"role": "assistant", "content": ai_response})
 
                 except Exception as e:
-                    error_message = f"AIとの通信中にエラー: {e}"
+                    error_message = f"AIとの通信中にエラーが発生しました: {e}"
                     st.error(error_message)
                     st.session_state.cal_messages.append({"role": "assistant", "content": "申し訳ありません、エラーが発生しました。"})
         
-        # ★ 5. 処理が完了したら、タスクとロックを解除し、次の入力に備える
-        st.session_state.cal_task = None
-        st.session_state.cal_processing_lock = False
+        # ★ 4. 全ての処理が終わった後、入力ウィジェットをクリアするため、最後に一度だけリロード
+        time.sleep(1) # ユーザーが結果を認識する時間を確保
         st.rerun()
