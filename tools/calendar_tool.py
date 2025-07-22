@@ -12,7 +12,7 @@ from streamlit_mic_recorder import mic_recorder
 import time
 
 # ===============================================================
-# 補助関数（Speech-to-Textも、カレンダーURL生成も、両方とも必要）
+# 補助関数（変更なし）
 # ===============================================================
 def transcribe_audio(audio_bytes, api_key):
     if not audio_bytes or not api_key: return None
@@ -41,7 +41,7 @@ def create_google_calendar_url(details):
     return f"{base_url}&{urllib.parse.urlencode(params, quote_via=urllib.parse.quote)}"
 
 # ===============================================================
-# 専門家のメインの仕事（ハイブリッド戦略）
+# 専門家のメインの仕事（ハイブリッド戦略・最終完成版）
 # ===============================================================
 def show_tool(gemini_api_key, speech_api_key):
     st.header("📅 あなただけのAI秘書", divider='rainbow')
@@ -49,9 +49,10 @@ def show_tool(gemini_api_key, speech_api_key):
     # --- 状態管理の初期化 ---
     if "cal_messages" not in st.session_state:
         st.session_state.cal_messages = [{"role": "assistant", "content": "こんにちは！ご予定を、下の方法でお伝えください。"}]
-    # 「こだま」防止用のID記憶場所
     if "cal_last_mic_id" not in st.session_state:
         st.session_state.cal_last_mic_id = None
+    if "cal_task_to_process" not in st.session_state:
+        st.session_state.cal_task_to_process = None
 
     # --- チャット履歴の表示 ---
     for message in st.session_state.cal_messages:
@@ -60,21 +61,17 @@ def show_tool(gemini_api_key, speech_api_key):
 
     # --- 共通AI処理関数 ---
     def process_with_gemini(prompt_text):
-        with st.chat_message("user"):
-            st.markdown(prompt_text)
         st.session_state.cal_messages.append({"role": "user", "content": prompt_text})
-
+        
         with st.chat_message("assistant"):
             if not gemini_api_key:
                 st.error("サイドバーでGemini APIキーを設定してください。")
                 return
-
             try:
                 with st.spinner("AIが予定を組み立てています..."):
                     genai.configure(api_key=gemini_api_key)
                     jst = pytz.timezone('Asia/Tokyo')
                     current_time_jst = datetime.now(jst).isoformat()
-                    
                     system_prompt = f"""
                     あなたは予定を解釈する優秀なアシスタントです。ユーザーのテキストから「title」「start_time」「end_time」「location」「details」を抽出してください。
                     - 現在の日時は `{current_time_jst}` (JST)です。これを基準に日時を解釈してください。
@@ -90,58 +87,57 @@ def show_tool(gemini_api_key, speech_api_key):
                     json_text = response.text.strip().lstrip("```json").rstrip("```").strip()
                     schedule_details = json.loads(json_text)
                     calendar_url = create_google_calendar_url(schedule_details)
-                    
                     display_start_time = "未設定"
                     if schedule_details.get('start_time'):
                         try: display_start_time = datetime.fromisoformat(schedule_details['start_time']).strftime('%Y年%m月%d日 %H:%M')
                         except: display_start_time = "AIが日付の解析に失敗"
-
                     ai_response = f"""以下の内容で承りました。よろしければリンクをクリックしてカレンダーに登録してください。\n\n- **件名:** {schedule_details.get('title', '未設定')}\n- **日時:** {display_start_time}\n- **場所:** {schedule_details.get('location', '未設定')}\n- **詳細:** {schedule_details.get('details', '未設定')}\n\n[📅 Googleカレンダーにこの予定を追加する]({calendar_url})"""
                     st.markdown(ai_response)
                     st.session_state.cal_messages.append({"role": "assistant", "content": ai_response})
-
             except Exception as e:
                 error_message = f"AIとの通信中にエラーが発生しました: {e}"
                 st.error(error_message)
                 st.session_state.cal_messages.append({"role": "assistant", "content": "申し訳ありません、エラーが発生しました。"})
-
-
-    # --- ★★★ ここからが、ハイブリッド戦略の、核心部です ★★★ ---
-
-    # --- 第一の道（成功確率100%）：テキスト入力 ---
-    st.write("---")
-    st.write("##### 方法１：キーボードで入力する（最も確実です）")
-    text_prompt = st.chat_input("キーボードで予定を入力...", key="cal_text_input")
-    if text_prompt:
-        process_with_gemini(text_prompt)
-
-    # --- 第二の道（挑戦確率90%）：音声入力 ---
-    st.write("---")
-    st.write("##### 方法２：音声で入力する（ベータ版）")
     
+    # --- ★★★ ここが、最後の、そして、完璧な、修正箇所です ★★★ ---
+
+    # --- ３つの入力方法を定義 ---
+    st.write("---")
+    st.write("##### 方法１：キーボードで入力する")
+    text_prompt = st.chat_input("キーボードで予定を入力...", key="cal_text_input")
+    
+    st.write("##### 方法２：音声で入力する")
     col1, col2 = st.columns(2)
     with col1:
-        # マイク入力
         audio_info = mic_recorder(start_prompt="🎤 マイクで録音", stop_prompt="⏹️ 停止", key='cal_mic_recorder')
-        if audio_info and audio_info['id'] != st.session_state.cal_last_mic_id:
-            st.session_state.cal_last_mic_id = audio_info['id'] # IDを記憶
-            if not speech_api_key:
-                st.error("サイドバーでSpeech-to-Text APIキーを設定してください。")
-            else:
-                with st.spinner("音声を文字に変換中..."):
-                    transcript = transcribe_audio(audio_info['bytes'], speech_api_key)
-                    if transcript:
-                        process_with_gemini(transcript)
-
     with col2:
-        # ファイルアップロード
         uploaded_file = st.file_uploader("📁 音声ファイルをアップロード", type=['wav', 'mp3', 'm4a', 'flac'], key="cal_uploader")
-        if uploaded_file:
-            # ファイルがアップロードされたら、それを即座に処理する
-            if not speech_api_key:
-                st.error("サイドバーでSpeech-to-Text APIキーを設定してください。")
-            else:
-                with st.spinner("音声ファイルを文字に変換中..."):
-                     transcript = transcribe_audio(uploaded_file.getvalue(), speech_api_key)
-                     if transcript:
-                         process_with_gemini(transcript)
+
+    # --- 交通整理とタスクの実行 ---
+    prompt_to_process = None
+    if text_prompt:
+        prompt_to_process = text_prompt
+    elif audio_info and audio_info['id'] != st.session_state.get('cal_last_mic_id'):
+        st.session_state.cal_last_mic_id = audio_info['id'] # IDを記憶
+        if not speech_api_key:
+            st.error("サイドバーでSpeech-to-Text APIキーを設定してください。")
+        else:
+            with st.spinner("音声を文字に変換中..."):
+                prompt_to_process = transcribe_audio(audio_info['bytes'], speech_api_key)
+    elif uploaded_file:
+        with st.spinner("音声ファイルを文字に変換中..."):
+            prompt_to_process = transcribe_audio(uploaded_file.getvalue(), speech_api_key)
+            
+    # --- 処理すべきタスクがあれば、AIに渡す ---
+    if prompt_to_process:
+        # このタスクをsession_stateに保存し、rerunする
+        st.session_state.cal_task_to_process = prompt_to_process
+        st.rerun()
+
+    # --- AI処理の実行（タスクがセットされている場合） ---
+    if st.session_state.cal_task_to_process:
+        process_with_gemini(st.session_state.cal_task_to_process)
+        # 処理が終わったら、タスクをクリアする
+        st.session_state.cal_task_to_process = None
+        # 最後にもう一度rerunして、入力ウィジェットの状態を完全にリセットする
+        st.rerun()
