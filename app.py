@@ -1,3 +1,5 @@
+# ポータルのメインファイル
+
 import streamlit as st
 import json
 from google_auth_oauthlib.flow import Flow
@@ -9,6 +11,7 @@ from streamlit_local_storage import LocalStorage
 
 # --- ツールインポート ---
 from tools import koutsuhi, calendar_tool, transcript_tool, research_tool
+from tools import okozukai_recorder # ★ 1. 新しいツールをインポート
 
 # ===============================================================
 # 1. アプリの基本設定
@@ -33,7 +36,6 @@ except (KeyError, FileNotFoundError):
 # 2. ログイン/ログアウト関数
 # ===============================================================
 def get_google_auth_flow():
-    # 「認証が成功したコード」の形を、完全に、維持します
     return Flow.from_client_config(
         client_config={ "web": { "client_id": CLIENT_ID, "client_secret": CLIENT_SECRET,
                                  "auth_uri": "https://accounts.google.com/o/oauth2/auth", "token_uri": "https://oauth2.googleapis.com/token",
@@ -102,11 +104,10 @@ with st.sidebar:
         if st.button("🔑 ログアウト", use_container_width=True): google_logout()
         st.divider()
 
-        tool_options = ("📅 カレンダー登録", "💹 価格リサーチ", "📝 議事録作成", "🚇 AI乗り換え案内")
+        # ★ 2. ツール選択肢に「お小遣いレコーダー」を追加
+        tool_options = ("📅 カレンダー登録", "💹 価格リサーチ", "📝 議事録作成", "🚇 AI乗り換え案内", "💰 お小遣いレコーダー")
         tool_choice = st.radio("使いたいツールを選んでください:", tool_options, key="tool_choice_radio")
         st.divider()
-        
-        # ★★★ ここが、最後の、そして、最も、美しい、修正箇所です ★★★
         
         localS = LocalStorage()
         saved_keys = localS.getItem("api_keys")
@@ -118,7 +119,7 @@ with st.sidebar:
         if 'speech_api_key' not in st.session_state:
             st.session_state.speech_api_key = speech_default
 
-        with st.expander("⚙️ APIキーの表示と再設定", expanded=not(st.session_state.gemini_api_key and st.session_state.speech_api_key)):
+        with st.expander("⚙️ APIキーの表示と再設定", expanded=not(st.session_state.gemini_api_key)):
             with st.form("api_key_form", clear_on_submit=False):
                 st.session_state.gemini_api_key = st.text_input("1. Gemini APIキー", type="password", value=st.session_state.gemini_api_key)
                 st.session_state.speech_api_key = st.text_input("2. Speech-to-Text APIキー", type="password", value=st.session_state.speech_api_key)
@@ -163,5 +164,8 @@ else:
         transcript_tool.show_tool(speech_api_key=speech_api_key)
     elif tool_choice == "💹 価格リサーチ":
         research_tool.show_tool(gemini_api_key=gemini_api_key)
+    # ★ 3. 「お小遣いレコーダー」を呼び出す処理を追加
+    elif tool_choice == "💰 お小遣いレコーダー":
+        okozukai_recorder.show_tool(gemini_api_key=gemini_api_key)
     else:
         st.warning(f"ツール「{tool_choice}」は現在準備中です。")
