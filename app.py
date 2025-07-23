@@ -11,7 +11,8 @@ from streamlit_local_storage import LocalStorage
 
 # --- ツールインポート ---
 from tools import koutsuhi, calendar_tool, transcript_tool, research_tool
-from tools import okozukai_recorder # ★ 1. 新しいツールをインポート
+# from tools import okozukai_recorder # コメントアウトされているようなので、そのままに
+from tools import translator_tool # ★ 1. 新しい「翻訳専門家」をインポート
 
 # ===============================================================
 # 1. アプリの基本設定
@@ -33,7 +34,7 @@ except (KeyError, FileNotFoundError):
     st.stop()
 
 # ===============================================================
-# 2. ログイン/ログアウト関数
+# 2. ログイン/ログアウト関数 (変更なし)
 # ===============================================================
 def get_google_auth_flow():
     return Flow.from_client_config(
@@ -52,7 +53,7 @@ def google_logout():
     st.rerun()
 
 # ===============================================================
-# 3. 認証処理の核心部
+# 3. 認証処理の核心部 (変更なし)
 # ===============================================================
 if "code" in st.query_params and "google_credentials" not in st.session_state:
     query_state = st.query_params.get("state")
@@ -104,8 +105,8 @@ with st.sidebar:
         if st.button("🔑 ログアウト", use_container_width=True): google_logout()
         st.divider()
 
-        # ★ 2. ツール選択肢に「お小遣いレコーダー」を追加
-        tool_options = ("📅 カレンダー登録", "💹 価格リサーチ", "📝 議事録作成", "🚇 AI乗り換え案内", "💰 お小遣いレコーダー")
+        # ★ 2. ツール選択肢に「フレンドリー翻訳」を追加
+        tool_options = ("🤝 フレンドリー翻訳", "📅 カレンダー登録", "💹 価格リサーチ", "📝 議事録作成", "🚇 AI乗り換え案内")
         tool_choice = st.radio("使いたいツールを選んでください:", tool_options, key="tool_choice_radio")
         st.divider()
         
@@ -114,35 +115,23 @@ with st.sidebar:
         gemini_default = saved_keys.get('gemini', '') if isinstance(saved_keys, dict) else ""
         speech_default = saved_keys.get('speech', '') if isinstance(saved_keys, dict) else ""
         
-        if 'gemini_api_key' not in st.session_state:
-            st.session_state.gemini_api_key = gemini_default
-        if 'speech_api_key' not in st.session_state:
-            st.session_state.speech_api_key = speech_default
+        if 'gemini_api_key' not in st.session_state: st.session_state.gemini_api_key = gemini_default
+        if 'speech_api_key' not in st.session_state: st.session_state.speech_api_key = speech_default
 
         with st.expander("⚙️ APIキーの表示と再設定", expanded=not(st.session_state.gemini_api_key)):
             with st.form("api_key_form", clear_on_submit=False):
                 st.session_state.gemini_api_key = st.text_input("1. Gemini APIキー", type="password", value=st.session_state.gemini_api_key)
                 st.session_state.speech_api_key = st.text_input("2. Speech-to-Text APIキー", type="password", value=st.session_state.speech_api_key)
-                
                 col1, col2 = st.columns(2)
-                with col1:
-                    save_button = st.form_submit_button("💾 保存", use_container_width=True)
-                with col2:
-                    reset_button = st.form_submit_button("🔄 クリア", use_container_width=True)
+                with col1: save_button = st.form_submit_button("💾 保存", use_container_width=True)
+                with col2: reset_button = st.form_submit_button("🔄 クリア", use_container_width=True)
 
         if save_button:
             localS.setItem("api_keys", {"gemini": st.session_state.gemini_api_key, "speech": st.session_state.speech_api_key})
-            st.success("キーを保存しました！")
-            time.sleep(1)
-            st.rerun()
-        
+            st.success("キーを保存しました！"); time.sleep(1); st.rerun()
         if reset_button:
-            localS.setItem("api_keys", None)
-            st.session_state.gemini_api_key = ""
-            st.session_state.speech_api_key = ""
-            st.success("キーをクリアしました。")
-            time.sleep(1)
-            st.rerun()
+            localS.setItem("api_keys", None); st.session_state.gemini_api_key = ""; st.session_state.speech_api_key = ""
+            st.success("キーをクリアしました。"); time.sleep(1); st.rerun()
         
         st.markdown("""<div style="font-size: 0.9em;"><a href="https://aistudio.google.com/app/apikey" target="_blank">1. Gemini APIキーの取得</a><br><a href="https://console.cloud.google.com/apis/credentials" target="_blank">2. Speech-to-Text APIキーの取得</a></div>""", unsafe_allow_html=True)
 
@@ -152,11 +141,13 @@ if "google_user_info" not in st.session_state:
     st.info("👆 サイドバーにある「🗝️ Googleアカウントでログイン」ボタンを押して、旅を始めましょう！")
 else:
     tool_choice = st.session_state.get("tool_choice_radio")
-   
     gemini_api_key = st.session_state.get('gemini_api_key', '')
     speech_api_key = st.session_state.get('speech_api_key', '')
 
-    if tool_choice == "🚇 AI乗り換え案内":
+    # ★ 3. 「フレンドリー翻訳」を呼び出す処理を追加
+    if tool_choice == "🤝 フレンドリー翻訳":
+        translator_tool.show_tool(gemini_api_key=gemini_api_key, speech_api_key=speech_api_key)
+    elif tool_choice == "🚇 AI乗り換え案内":
         koutsuhi.show_tool(gemini_api_key=gemini_api_key)
     elif tool_choice == "📅 カレンダー登録":
         calendar_tool.show_tool(gemini_api_key=gemini_api_key, speech_api_key=speech_api_key)
@@ -164,8 +155,7 @@ else:
         transcript_tool.show_tool(speech_api_key=speech_api_key)
     elif tool_choice == "💹 価格リサーチ":
         research_tool.show_tool(gemini_api_key=gemini_api_key)
-    # ★ 3. 「お小遣いレコーダー」を呼び出す処理を追加
-    elif tool_choice == "💰 お小遣いレコーダー":
-        okozukai_recorder.show_tool(gemini_api_key=gemini_api_key)
+    # elif tool_choice == "💰 お小遣いレコーダー": # 元のコードでコメントアウトされていたので、そのままにしておきます
+    #     okozukai_recorder.show_tool(gemini_api_key=gemini_api_key)
     else:
         st.warning(f"ツール「{tool_choice}」は現在準備中です。")
