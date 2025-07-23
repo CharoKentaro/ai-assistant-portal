@@ -6,7 +6,9 @@ from google.cloud import speech
 from google.api_core.client_options import ClientOptions
 from streamlit_mic_recorder import mic_recorder
 
-# (補助関数 transcribe_audio, translate_text_with_gemini は変更なし)
+# ===============================================================
+# 補助関数 (変更なし、私たちの信頼できる技能)
+# ===============================================================
 def transcribe_audio(audio_bytes, api_key):
     if not audio_bytes or not api_key: return None
     try:
@@ -39,11 +41,12 @@ def translate_text_with_gemini(text_to_translate, api_key):
 
 
 # ===============================================================
-# 専門家のメインの仕事 (司令塔 app.py から呼び出される)
+# 専門家のメインの仕事 (私たちの叡智の結晶)
 # ===============================================================
 def show_tool(gemini_api_key, speech_api_key):
     st.header("🤝 フレンドリー翻訳ツール", divider='rainbow')
 
+    # --- 状態管理の初期化 (変更なし) ---
     if "translator_results" not in st.session_state:
         st.session_state.translator_results = []
     if "translator_last_mic_id" not in st.session_state:
@@ -51,6 +54,7 @@ def show_tool(gemini_api_key, speech_api_key):
     if "translator_last_text" not in st.session_state:
         st.session_state.translator_last_text = ""
 
+    # --- UIウィジェットの表示 (変更なし) ---
     st.info("マイクで日本語を話すか、テキストボックスに入力してください。自然な英語に翻訳します。")
     col1, col2 = st.columns([1, 2])
     with col1:
@@ -58,6 +62,7 @@ def show_tool(gemini_api_key, speech_api_key):
     with col2:
         text_prompt = st.text_input("または、ここに日本語を入力してEnterキーを押してください...", key="translator_text")
 
+    # --- 結果表示エリア ---
     if st.session_state.translator_results:
         st.write("---")
         for i, result in enumerate(st.session_state.translator_results):
@@ -65,38 +70,46 @@ def show_tool(gemini_api_key, speech_api_key):
                 st.caption(f"翻訳履歴 No.{len(st.session_state.translator_results) - i}")
                 st.markdown(f"**🇯🇵 あなたの入力:**\n> {result['original']}")
                 st.markdown(f"**🇺🇸 AIの翻訳:**\n> {result['translated']}")
+        
+        # ★★★ クリアボタンのロジックをここに集約 ★★★
         if st.button("翻訳履歴をクリア", key="clear_translator_history"):
             st.session_state.translator_results = []
-            st.session_state.translator_last_text = ""
+            # 「地縛霊」の発生を防ぐための、極めて重要な一行
+            st.session_state.translator_last_text = text_prompt
             st.rerun()
 
-    japanese_text = None
-    is_new_input = False
 
+    # ★★★ ここが、私たちの最終作戦の、核心部です ★★★
+
+    # --- Step 1: 新しい入力の「検知」に徹する ---
+    japanese_text_to_process = None
+    
+    # 新しい音声入力か？
     if audio_info and audio_info['id'] != st.session_state.translator_last_mic_id:
-        st.session_state.translator_last_mic_id = audio_info['id']
-        if not speech_api_key: st.error("サイドバーでSpeech-to-Text APIキーを設定してください。")
-        else:
-            with st.spinner("音声を日本語に変換中..."):
-                japanese_text = transcribe_audio(audio_info['bytes'], speech_api_key)
-                if japanese_text: is_new_input = True
+        with st.spinner("音声を日本語に変換中..."):
+            text_from_mic = transcribe_audio(audio_info['bytes'], speech_api_key)
+        if text_from_mic:
+            japanese_text_to_process = text_from_mic
+            # 検知した瞬間に、IDとテキストの両方を「処理済み」として記憶
+            st.session_state.translator_last_mic_id = audio_info['id']
+            st.session_state.translator_last_text = text_from_mic
 
+    # 新しいテキスト入力か？
     elif text_prompt and text_prompt != st.session_state.translator_last_text:
-        japanese_text = text_prompt
-        is_new_input = True
+        japanese_text_to_process = text_prompt
+        # 検知した瞬間に、テキストを「処理済み」として記憶
+        st.session_state.translator_last_text = text_prompt
 
-    if is_new_input and japanese_text:
+    # --- Step 2: 「検知された新しい入力がある場合のみ」、翻訳処理を実行する ---
+    if japanese_text_to_process:
         if not gemini_api_key: st.error("サイドバーでGemini APIキーを設定してください。")
         else:
             with st.spinner("AIが最適な英語を考えています..."):
-                translated_text = translate_text_with_gemini(japanese_text, gemini_api_key)
+                translated_text = translate_text_with_gemini(japanese_text_to_process, gemini_api_key)
             if translated_text:
-                st.session_state.translator_results.insert(0, {"original": japanese_text, "translated": translated_text})
-                st.session_state.translator_last_text = japanese_text
-                
-                # ★★★ Streamlitの絶対的なルールを尊重し、問題の行を削除 ★★★
-                # st.session_state.translator_text = ""  <-- この行がエラーの原因でした
-                
+                st.session_state.translator_results.insert(0, {"original": japanese_text_to_process, "translated": translated_text})
                 st.rerun()
             else:
+                # 翻訳に失敗した場合は、同じテキストで再試行できるよう、記憶をリセットする
+                st.session_state.translator_last_text = ""
                 st.warning("翻訳に失敗しました。もう一度お試しください。")
